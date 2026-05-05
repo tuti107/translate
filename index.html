@@ -321,6 +321,41 @@
       </div>
 
       <div class="group">
+        <h3>マイク (音声入力)</h3>
+        <div class="row" style="gap:8px;">
+          <button type="button" id="testMic">マイクをテスト</button>
+          <span class="test-result" id="micResult"></span>
+        </div>
+        <details class="howto">
+          <summary>▶ マイクが許可されない (not-allowed) 場合の対処</summary>
+          <div class="howto-body">
+            <p><strong>Android Chrome:</strong></p>
+            <ol>
+              <li>アドレスバー左の 🔒 をタップ → 「権限」 → 「マイク」 → 「許可」</li>
+              <li>または Android 設定 → アプリ → Chrome → 権限 → マイク → 「許可」</li>
+              <li>Android 設定 → アプリ → 「Speech Services by Google」が有効か確認 (無効だと STT が動きません)</li>
+              <li>Chrome を再起動 → このページを再読込 → [マイクをテスト]</li>
+            </ol>
+            <p><strong>iOS Safari:</strong></p>
+            <ol>
+              <li>アドレスバー「ぁA」→ Web サイトの設定 → マイク → 許可</li>
+              <li>iOS 設定 → Safari → マイク → 「確認」または「許可」</li>
+              <li>iOS 設定 → プライバシーとセキュリティ → マイク → Safari がオン</li>
+            </ol>
+            <p><strong>PC (Chrome/Edge):</strong></p>
+            <ol>
+              <li>アドレスバー左のアイコン → サイトの設定 → マイク → 許可</li>
+              <li>OS のマイク権限 (Windows: 設定 → プライバシー → マイク) でブラウザが許可されているか</li>
+            </ol>
+            <div class="callout warn">
+              ⚠️ 一度「ブロック」を選択すると、以降は許可ダイアログが出ずに即 not-allowed になります。
+              上記手順でサイトの権限を「リセット」または「許可」に手動変更する必要があります。
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="group">
         <h3>TTS 音声 (読み上げ)</h3>
         <div class="row" style="gap:8px;">
           <button type="button" id="refreshVoices">利用可能な音声を再読込</button>
@@ -421,7 +456,8 @@ const state = {
   history:  loadHistory(),
   recognition: null,
   recognizingFor: null, // 'A' | 'B' | null
-  recognizedText: ""
+  recognizedText: "",
+  micGranted: false
 };
 
 function loadHistory() {
@@ -508,6 +544,34 @@ function getSR() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
+// マイク許可を明示的に取得 (Android Chrome の not-allowed 回避に有効)
+async function ensureMicPermission() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return { ok: false, reason: "このブラウザは getUserMedia 未対応です" };
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // すぐに停止 (権限取得が目的)
+    stream.getTracks().forEach(t => t.stop());
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: `${e.name}: ${e.message}` };
+  }
+}
+
+function notAllowedHelp() {
+  const ua = navigator.userAgent;
+  const isAndroid = /Android/i.test(ua);
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  if (isAndroid) {
+    return "❗ マイク許可が拒否されています。アドレスバー左の 🔒 → 権限 → マイク → 「許可」。または Android 設定 → アプリ → Chrome → 権限 → マイク → 許可。さらに「Speech Services by Google」が有効か確認。";
+  }
+  if (isIOS) {
+    return "❗ マイク許可が拒否されています。アドレスバー「ぁA」→ Web サイトの設定 → マイク → 許可。または iOS 設定 → Safari → マイク。";
+  }
+  return "❗ マイク許可が拒否されています。アドレスバー左のアイコン → サイトの設定 → マイク → 許可、を確認してください。";
+}
+
 function startRecognition(lang, onFinal, onError) {
   const SR = getSR();
   if (!SR) {
@@ -530,7 +594,17 @@ function startRecognition(lang, onFinal, onError) {
     state.recognizedText = finalText || interim;
   };
   r.onerror = (ev) => {
-    onError(`音声認識エラー: ${ev.error}`);
+    if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+      onError(notAllowedHelp());
+    } else if (ev.error === "no-speech") {
+      onError("（音声を検出できませんでした。もう少し大きめの声で、または静かな場所でお試しください）");
+    } else if (ev.error === "language-not-supported") {
+      onError(`音声認識エラー: この端末/ブラウザは ${lang} の音声認識に対応していません。`);
+    } else if (ev.error === "network") {
+      onError("音声認識エラー: ネットワーク接続を確認してください (Android Chrome 等は STT にネット接続が必要)。");
+    } else {
+      onError(`音声認識エラー: ${ev.error}`);
+    }
   };
   r.onend = () => {
     onFinal((finalText || state.recognizedText || "").trim());
@@ -710,11 +784,27 @@ function setupPTT(btnId, getDirection) {
   const btn = document.getElementById(btnId);
   let active = false;
 
-  const begin = (e) => {
+  const begin = async (e) => {
     e.preventDefault();
     if (active || state.recognizingFor) return;
     const { srcLang } = getDirection();
     const langCfg = CFG.languages[srcLang];
+
+    // 1) 先にマイク許可を確実に取得 (Android Chrome の not-allowed 回避)
+    if (!state.micGranted) {
+      setStatus("マイク許可を確認中...");
+      const r = await ensureMicPermission();
+      if (!r.ok) {
+        if (/NotAllowedError|Permission/i.test(r.reason)) {
+          setStatus(notAllowedHelp(), "error");
+        } else {
+          setStatus("マイクが利用できません: " + r.reason, "error");
+        }
+        return;
+      }
+      state.micGranted = true;
+    }
+
     state.recognizedText = "";
     state.recognizingFor = btnId;
     active = true;
@@ -730,7 +820,10 @@ function setupPTT(btnId, getDirection) {
         btn.classList.remove("recording");
         if (wasFor !== btnId) return;
         if (!finalText) {
-          setStatus("（音声が認識できませんでした）", "error");
+          // onerror でメッセージ済みならそちらを優先
+          if (!$("#status").classList.contains("error")) {
+            setStatus("（音声が認識できませんでした）", "error");
+          }
           return;
         }
         await onRecognized(finalText, getDirection);
@@ -741,6 +834,8 @@ function setupPTT(btnId, getDirection) {
         active = false;
         btn.classList.remove("recording");
         setStatus(err, "error");
+        // not-allowed は記憶を解除して次回再試行
+        if (/許可/.test(err)) state.micGranted = false;
       }
     );
   };
@@ -972,6 +1067,20 @@ function init() {
   $("#refreshVoices").addEventListener("click", () => {
     _voicesCache = null;
     refreshVoiceSelectors();
+  });
+  $("#testMic").addEventListener("click", async () => {
+    const out = $("#micResult");
+    out.textContent = "確認中...";
+    out.className = "test-result";
+    const r = await ensureMicPermission();
+    if (r.ok) {
+      out.textContent = "OK (マイク許可済み)";
+      out.className = "test-result ok";
+      state.micGranted = true;
+    } else {
+      out.textContent = r.reason.slice(0, 80);
+      out.className = "test-result err";
+    }
   });
   // テスト再生: ダイアログ内で現在選択中の voice を試す
   const testSamples = {
