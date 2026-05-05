@@ -1,0 +1,1039 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f6feb">
+<title>音声翻訳 (日 / 泰 / 英)</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --panel-2: #1d222d;
+    --border: #2a3140;
+    --text: #e6e6e6;
+    --muted: #9aa3b2;
+    --accent: #1f6feb;
+    --accent-2: #2c7ce5;
+    --danger: #d6453d;
+    --warn: #b88403;
+    --ok: #2ea043;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", "Noto Sans Thai", sans-serif;
+    line-height: 1.5;
+    min-height: 100vh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    position: sticky; top: 0; z-index: 5;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .meta { font-size: 12px; color: var(--muted); }
+  main { max-width: 760px; margin: 0 auto; padding: 12px; }
+  button {
+    font: inherit; color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+  }
+  button:hover { background: #232838; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent-2); }
+  button.primary:hover { background: var(--accent-2); }
+  button.danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+  button.icon { padding: 6px 10px; }
+
+  select, input[type="text"], input[type="password"] {
+    font: inherit; color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    width: 100%;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+
+  .toolbar {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+    margin: 8px 0 12px;
+  }
+
+  .history {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    min-height: 280px;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+  .history .empty { color: var(--muted); text-align: center; padding: 24px 0; }
+  .turn {
+    border-top: 1px dashed var(--border);
+    padding: 10px 0;
+  }
+  .turn:first-child { border-top: 0; padding-top: 0; }
+  .turn .src, .turn .tgt {
+    display: flex; gap: 8px; align-items: flex-start;
+  }
+  .turn .lang {
+    font-size: 12px; color: var(--muted); flex: 0 0 36px;
+  }
+  .turn .text {
+    flex: 1; word-break: break-word;
+  }
+  .turn .actions { display: flex; gap: 6px; margin-left: 8px; }
+  .turn .actions button { padding: 4px 8px; font-size: 12px; }
+  .turn .tgt .text { color: #cfe3ff; font-weight: 500; }
+  .turn.error .tgt .text { color: var(--danger); }
+
+  .ptt-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .ptt {
+    height: 96px; border-radius: 14px;
+    background: var(--panel);
+    border: 2px solid var(--border);
+    color: var(--text);
+    font-size: 16px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+    user-select: none; -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  .ptt small { font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 4px; }
+  .ptt.recording { background: #2a1a1a; border-color: var(--danger); color: var(--danger); }
+
+  .status {
+    margin-top: 10px; min-height: 20px; font-size: 13px; color: var(--muted);
+  }
+  .status.error { color: var(--danger); }
+  .status.ok { color: var(--ok); }
+
+  /* settings modal */
+  dialog.settings {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    border-radius: 12px;
+    width: min(640px, 92vw);
+    padding: 0;
+  }
+  dialog.settings::backdrop { background: rgba(0,0,0,0.55); }
+  dialog .body { padding: 16px; max-height: 80vh; overflow-y: auto; }
+  dialog .body h2 { margin: 0 0 8px; font-size: 18px; }
+  dialog .actions {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 16px; border-top: 1px solid var(--border);
+    background: var(--panel-2);
+  }
+  .group {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    margin: 12px 0;
+    background: var(--panel-2);
+  }
+  .group h3 { margin: 0 0 8px; font-size: 14px; }
+
+  .key-row { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; }
+
+  details.howto {
+    margin-top: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+  }
+  details.howto > summary {
+    cursor: pointer; padding: 8px 12px;
+    color: var(--muted); font-size: 13px;
+  }
+  details.howto[open] > summary { color: var(--text); }
+  details.howto .howto-body { padding: 0 14px 12px 14px; font-size: 13px; }
+  details.howto ol { padding-left: 22px; margin: 8px 0; }
+  details.howto li { margin: 4px 0; }
+  .callout {
+    margin: 8px 0 0; padding: 8px 10px;
+    border-radius: 8px; font-size: 12px;
+    border-left: 3px solid var(--muted); background: rgba(255,255,255,0.03);
+  }
+  .callout.tip   { border-color: var(--accent); }
+  .callout.warn  { border-color: var(--warn); }
+  .callout.ok    { border-color: var(--ok); }
+
+  .test-result { font-size: 12px; min-width: 60px; text-align: right; }
+  .test-result.ok { color: var(--ok); }
+  .test-result.err { color: var(--danger); }
+
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row > * { min-width: 0; }
+
+  .openlink { font-size: 12px; }
+  .openlink::after { content: " ↗"; }
+
+  @media (min-width: 720px) {
+    .toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>音声翻訳 <span class="meta" id="pairLabel"></span></h1>
+  <div class="row">
+    <button id="openSettings" class="icon" title="設定">⚙ 設定</button>
+  </div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <div>
+      <label for="provider">プロバイダ</label>
+      <select id="provider">
+        <option value="claude">Claude Sonnet 4.6</option>
+        <option value="gemini">Gemini 2.5 Flash</option>
+      </select>
+    </div>
+    <div>
+      <label for="tone">モード</label>
+      <select id="tone">
+        <option value="business">ビジネス（敬語）</option>
+        <option value="casual">カジュアル（部下向け）</option>
+        <option value="intimate">親密（恋人・友人）</option>
+      </select>
+    </div>
+    <div>
+      <label for="pair">言語ペア</label>
+      <select id="pair">
+        <option value="ja-th">🇯🇵 日本語 ↔ 🇹🇭 タイ語</option>
+        <option value="ja-en">🇯🇵 日本語 ↔ 🇬🇧 英語</option>
+        <option value="en-th">🇬🇧 英語 ↔ 🇹🇭 タイ語</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="history" id="history">
+    <div class="empty" id="historyEmpty">下のボタンを押している間、音声を取り込みます。<br>離すと翻訳が始まります。</div>
+  </div>
+
+  <div class="ptt-wrap">
+    <button class="ptt" id="pttA"><span id="pttALabel">A</span><small id="pttAHint">押して話す</small></button>
+    <button class="ptt" id="pttB"><span id="pttBLabel">B</span><small id="pttBHint">押して話す</small></button>
+  </div>
+
+  <div class="status" id="status"></div>
+</main>
+
+<dialog class="settings" id="settings">
+  <form method="dialog">
+    <div class="body">
+      <h2>⚙ 設定</h2>
+
+      <div class="group">
+        <h3>翻訳プロバイダ</h3>
+        <label><input type="radio" name="defaultProvider" value="claude"> Claude Sonnet 4.6</label>
+        <label><input type="radio" name="defaultProvider" value="gemini"> Gemini 2.5 Flash</label>
+      </div>
+
+      <div class="group">
+        <h3>Anthropic API Key</h3>
+        <div class="key-row">
+          <input type="password" id="anthropicKey" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+          <button type="button" id="anthropicShow" class="icon" title="表示切替">👁</button>
+          <button type="button" id="anthropicTest">疎通テスト</button>
+        </div>
+        <div class="row" style="justify-content:space-between; margin-top:6px;">
+          <span class="test-result" id="anthropicResult"></span>
+          <button type="button" class="danger" id="anthropicClear">キー削除</button>
+        </div>
+        <details class="howto">
+          <summary>▶ APIキーの取得方法を表示</summary>
+          <div class="howto-body">
+            <ol>
+              <li>Anthropic Console を開きアカウント作成 / ログイン
+                <div><a class="openlink" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com を開く</a></div>
+              </li>
+              <li>左メニュー「API Keys」を選択</li>
+              <li>「Create Key」を押し、任意の名前を付けて作成</li>
+              <li>表示された <code>sk-ant-...</code> のキーをコピー
+                <div class="callout warn">⚠️ キーは作成時の 1 回しか表示されません。コピー忘れに注意。</div>
+              </li>
+              <li>上の入力欄に貼り付けて [疎通テスト] → [保存]</li>
+            </ol>
+            <div class="callout tip">💡 料金: Sonnet 4.6 は無料枠なし（従量課金）。100 翻訳あたり約 $0.18 (≒ 27 円) 程度。</div>
+            <div class="callout warn">⚠️ キーはこのブラウザの <code>localStorage</code> に保存されます。共用 PC では使用後に [キー削除]。</div>
+          </div>
+        </details>
+      </div>
+
+      <div class="group">
+        <h3>Google AI API Key (Gemini)</h3>
+        <div class="key-row">
+          <input type="password" id="googleKey" placeholder="AIza..." autocomplete="off" spellcheck="false">
+          <button type="button" id="googleShow" class="icon" title="表示切替">👁</button>
+          <button type="button" id="googleTest">疎通テスト</button>
+        </div>
+        <div class="row" style="justify-content:space-between; margin-top:6px;">
+          <span class="test-result" id="googleResult"></span>
+          <button type="button" class="danger" id="googleClear">キー削除</button>
+        </div>
+        <details class="howto">
+          <summary>▶ APIキーの取得方法を表示</summary>
+          <div class="howto-body">
+            <ol>
+              <li>Google アカウントでログイン</li>
+              <li>Google AI Studio の API キー画面を開く
+                <div><a class="openlink" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey を開く</a></div>
+              </li>
+              <li>「Create API key」を押し、プロジェクトを選択 (新規作成も可)</li>
+              <li>表示された <code>AIza...</code> のキーをコピー</li>
+              <li>上の入力欄に貼り付けて [疎通テスト] → [保存]</li>
+            </ol>
+            <div class="callout tip">💡 無料枠: <code>gemini-2.5-flash</code> は 1日 数千リクエスト程度まで無料 (変動あり)。</div>
+            <div class="callout warn">⚠️ キーはこのブラウザの <code>localStorage</code> に保存されます。共用 PC では使用後に [キー削除]。</div>
+          </div>
+        </details>
+      </div>
+
+      <div class="group">
+        <h3>デフォルト</h3>
+        <label for="defaultTone">モード</label>
+        <select id="defaultTone">
+          <option value="business">ビジネス</option>
+          <option value="casual">カジュアル</option>
+          <option value="intimate">親密</option>
+        </select>
+        <label for="defaultPair">言語ペア</label>
+        <select id="defaultPair">
+          <option value="ja-th">日本語 ↔ タイ語</option>
+          <option value="ja-en">日本語 ↔ 英語</option>
+          <option value="en-th">英語 ↔ タイ語</option>
+        </select>
+      </div>
+
+      <div class="group">
+        <h3>TTS 音声 (読み上げ)</h3>
+        <div class="row" style="gap:8px;">
+          <button type="button" id="refreshVoices">利用可能な音声を再読込</button>
+          <span class="test-result" id="voicesSummary"></span>
+        </div>
+        <label for="voiceJa">🇯🇵 日本語</label>
+        <select id="voiceJa"><option value="">自動選択</option></select>
+        <label for="voiceTh">🇹🇭 タイ語</label>
+        <select id="voiceTh"><option value="">自動選択</option></select>
+        <label for="voiceEn">🇬🇧 英語</label>
+        <select id="voiceEn"><option value="">自動選択</option></select>
+        <div class="row" style="gap:8px; margin-top:8px;">
+          <button type="button" id="testVoiceJa">🇯🇵 テスト再生</button>
+          <button type="button" id="testVoiceTh">🇹🇭 テスト再生</button>
+          <button type="button" id="testVoiceEn">🇬🇧 テスト再生</button>
+        </div>
+        <details class="howto">
+          <summary>▶ タイ語の音声が無い / 動かない場合の対処</summary>
+          <div class="howto-body">
+            <div class="callout warn">
+              ⚠️ Web ブラウザの TTS は OS にインストールされている音声合成エンジンを使います。
+              Windows / macOS は<strong>標準ではタイ語の音声が入っていない</strong>ことが多いため、追加が必要です。
+            </div>
+            <p><strong>Windows 10 / 11:</strong></p>
+            <ol>
+              <li>設定 → 時刻と言語 → 言語と地域</li>
+              <li>「言語を追加」→「ไทย / Thai」を追加</li>
+              <li>追加した言語を選択 → 「オプション」→ 「音声」をダウンロード</li>
+              <li>設定 → 時刻と言語 → 音声 で「Microsoft Achara / Pratip」等が表示されることを確認</li>
+              <li>このページで [利用可能な音声を再読込] → 上の「タイ語」プルダウンに voice が表示されたら選択 → [保存]</li>
+            </ol>
+            <p><strong>macOS:</strong></p>
+            <ol>
+              <li>システム設定 → アクセシビリティ → 読み上げコンテンツ → システムの声 → 「カスタマイズ…」</li>
+              <li>「Kanya (タイ語)」等にチェックを入れて DL</li>
+              <li>このページで [利用可能な音声を再読込]</li>
+            </ol>
+            <p><strong>Chrome / Edge:</strong></p>
+            <p>ブラウザ内蔵のオンライン音声 (Google / Microsoft) もタイ語をサポートします。インターネット接続必須。<br>
+              企業ネットワーク等で <code>*.google.com</code> へのアクセスが制限されていると鳴らない場合があります。</p>
+            <div class="callout tip">
+              💡 OS 追加が手間な場合、後日 Google Cloud TTS / Azure TTS のクラウド音声 (有料) に切り替える追加対応も可能です。
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="group">
+        <h3>履歴</h3>
+        <button type="button" class="danger" id="clearHistory">会話履歴をすべて削除</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button value="cancel">閉じる</button>
+      <button class="primary" id="saveSettings" value="default">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- プロンプト定義 (HTML 編集だけで微調整できるよう外出し) -->
+<script type="application/json" id="promptConfig">
+{
+  "system": "You are a professional translator. Translate the user's text from {SRC_NAME} to {TGT_NAME}. Output ONLY the translated text. Do not add explanations, romanization, parenthetical notes, quotation marks, or the original text. Preserve proper nouns, numbers, and the speaker's intent. Match the requested tone exactly.\n\nTone: {TONE}\n\nIf the input is ambiguous or appears to be a fragment, translate it as-is without asking for clarification.",
+  "tones": {
+    "business": "Polite formal business register. In Japanese use 敬語 (尊敬語/丁寧語) suitable for clients and superiors. In Thai use ภาษาทางการสุภาพ with ครับ/ค่ะ as appropriate. In English use professional, courteous business tone.",
+    "casual": "Polite but friendly tone — slightly less formal than business. For talking to junior colleagues or peers. In Japanese use 丁寧語 (です/ます) without heavy 尊敬語. In Thai use สุภาพแต่เป็นกันเอง. In English use warm but professional tone.",
+    "intimate": "Warm, casual, intimate tone — as if speaking to a close partner or friend. In Japanese use natural casual speech (くだけた口調, タメ口は文脈に応じて). In Thai use คำพูดสนิทสนม. In English use casual conversational tone."
+  },
+  "languages": {
+    "ja": { "name": "Japanese (日本語)", "bcp47": "ja-JP", "flag": "🇯🇵", "label": "日本語" },
+    "th": { "name": "Thai (ภาษาไทย)", "bcp47": "th-TH", "flag": "🇹🇭", "label": "ไทย" },
+    "en": { "name": "English",        "bcp47": "en-US", "flag": "🇬🇧", "label": "English" }
+  }
+}
+</script>
+
+<script>
+"use strict";
+
+// ---------- config & state ----------
+const CFG = JSON.parse(document.getElementById("promptConfig").textContent);
+const LS = {
+  anthropicKey: "tt_anthropic_key",
+  googleKey:    "tt_google_key",
+  provider:     "tt_provider",
+  tone:         "tt_tone",
+  pair:         "tt_pair",
+  history:      "tt_history",
+  voiceJa:      "tt_voice_ja",
+  voiceTh:      "tt_voice_th",
+  voiceEn:      "tt_voice_en"
+};
+
+const state = {
+  provider: localStorage.getItem(LS.provider) || "claude",
+  tone:     localStorage.getItem(LS.tone)     || "business",
+  pair:     localStorage.getItem(LS.pair)     || "ja-th",
+  history:  loadHistory(),
+  recognition: null,
+  recognizingFor: null, // 'A' | 'B' | null
+  recognizedText: ""
+};
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(LS.history)) || []; }
+  catch { return []; }
+}
+function saveHistory() {
+  // 最新 100 件まで
+  const trimmed = state.history.slice(-100);
+  localStorage.setItem(LS.history, JSON.stringify(trimmed));
+  state.history = trimmed;
+}
+
+// ---------- DOM helpers ----------
+const $ = sel => document.querySelector(sel);
+const el = (tag, attrs = {}, ...children) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else if (k === "onclick") e.addEventListener("click", v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    e.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  }
+  return e;
+};
+
+function setStatus(msg, kind = "") {
+  const s = $("#status");
+  s.textContent = msg || "";
+  s.className = "status" + (kind ? " " + kind : "");
+}
+
+// ---------- pair / button labels ----------
+function pairLangs(pairKey) {
+  const [a, b] = pairKey.split("-");
+  return [a, b];
+}
+function applyPairUI() {
+  const [a, b] = pairLangs(state.pair);
+  const A = CFG.languages[a], B = CFG.languages[b];
+  $("#pttALabel").textContent = `${A.flag} ${A.label}`;
+  $("#pttBLabel").textContent = `${B.flag} ${B.label}`;
+  $("#pttAHint").textContent = `押して${A.label}を話す`;
+  $("#pttBHint").textContent = `押して${B.label}を話す`;
+  $("#pairLabel").textContent = `(${A.label} ↔ ${B.label})`;
+}
+
+// ---------- history rendering ----------
+function renderHistory() {
+  const h = $("#history");
+  h.innerHTML = "";
+  if (state.history.length === 0) {
+    h.appendChild(el("div", { class: "empty", id: "historyEmpty" },
+      "下のボタンを押している間、音声を取り込みます。"));
+    return;
+  }
+  for (const t of state.history) {
+    const src = CFG.languages[t.srcLang], tgt = CFG.languages[t.tgtLang];
+    const tDiv = el("div", { class: "turn" + (t.error ? " error" : "") });
+    tDiv.appendChild(el("div", { class: "src" },
+      el("div", { class: "lang" }, `${src.flag} ${src.label}`),
+      el("div", { class: "text" }, t.srcText)
+    ));
+    const tgtRow = el("div", { class: "tgt" },
+      el("div", { class: "lang" }, `${tgt.flag} ${tgt.label}`),
+      el("div", { class: "text" }, t.tgtText || (t.error ? `❗ ${t.error}` : "..."))
+    );
+    if (t.tgtText && !t.error) {
+      const playBtn = el("button", { class: "icon", title: "再生" }, "🔊");
+      playBtn.addEventListener("click", () => speak(t.tgtText, tgt.bcp47));
+      tgtRow.appendChild(el("div", { class: "actions" }, playBtn));
+    }
+    tDiv.appendChild(tgtRow);
+    h.appendChild(tDiv);
+  }
+  h.scrollTop = h.scrollHeight;
+}
+
+// ---------- speech recognition (STT) ----------
+function getSR() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function startRecognition(lang, onFinal, onError) {
+  const SR = getSR();
+  if (!SR) {
+    onError("このブラウザは音声認識(Web Speech API)に未対応です。Chrome / Edge / Safari をお試しください。");
+    return null;
+  }
+  const r = new SR();
+  r.lang = lang;
+  r.continuous = false;
+  r.interimResults = true;
+  let finalText = "";
+  r.onresult = (ev) => {
+    let interim = "";
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const res = ev.results[i];
+      if (res.isFinal) finalText += res[0].transcript;
+      else interim += res[0].transcript;
+    }
+    setStatus(`認識中: ${finalText}${interim ? " ⟪" + interim + "⟫" : ""}`);
+    state.recognizedText = finalText || interim;
+  };
+  r.onerror = (ev) => {
+    onError(`音声認識エラー: ${ev.error}`);
+  };
+  r.onend = () => {
+    onFinal((finalText || state.recognizedText || "").trim());
+  };
+  try {
+    r.start();
+  } catch (e) {
+    onError("録音開始に失敗: " + e.message);
+    return null;
+  }
+  return r;
+}
+
+// ---------- TTS ----------
+let _voicesCache = null;
+function getVoicesAsync() {
+  if (!("speechSynthesis" in window)) return Promise.resolve([]);
+  return new Promise(resolve => {
+    let v = speechSynthesis.getVoices();
+    if (v && v.length) { _voicesCache = v; resolve(v); return; }
+    const handler = () => {
+      v = speechSynthesis.getVoices();
+      _voicesCache = v;
+      speechSynthesis.removeEventListener("voiceschanged", handler);
+      resolve(v || []);
+    };
+    speechSynthesis.addEventListener("voiceschanged", handler);
+    // フォールバック: 一部ブラウザは voiceschanged を発火しないことがある
+    setTimeout(() => {
+      v = speechSynthesis.getVoices();
+      if (v && v.length) {
+        _voicesCache = v;
+        speechSynthesis.removeEventListener("voiceschanged", handler);
+        resolve(v);
+      }
+    }, 800);
+  });
+}
+
+function langKey(bcp47) {
+  // "th-TH" -> "th"
+  return (bcp47 || "").toLowerCase().split(/[-_]/)[0];
+}
+
+function findVoiceFor(bcp47, voices, manualName) {
+  if (!voices || !voices.length) return null;
+  if (manualName) {
+    const m = voices.find(v => v.name === manualName);
+    if (m) return m;
+  }
+  const want = (bcp47 || "").toLowerCase().replace("_", "-");
+  const wantLang = langKey(bcp47);
+  // 1) 完全一致 (th-TH)
+  let v = voices.find(v => v.lang && v.lang.toLowerCase().replace("_", "-") === want);
+  if (v) return v;
+  // 2) 言語コードのみ一致 (th)
+  v = voices.find(v => langKey(v.lang) === wantLang);
+  if (v) return v;
+  return null;
+}
+
+function manualVoiceKeyFor(bcp47) {
+  switch (langKey(bcp47)) {
+    case "ja": return LS.voiceJa;
+    case "th": return LS.voiceTh;
+    case "en": return LS.voiceEn;
+    default:   return null;
+  }
+}
+
+async function speak(text, bcp47) {
+  if (!("speechSynthesis" in window)) {
+    setStatus("このブラウザは音声合成 (TTS) に未対応です。", "error");
+    return;
+  }
+  speechSynthesis.cancel();
+
+  const voices = _voicesCache || await getVoicesAsync();
+  const manualKey = manualVoiceKeyFor(bcp47);
+  const manualName = manualKey ? localStorage.getItem(manualKey) : null;
+  const voice = findVoiceFor(bcp47, voices, manualName);
+
+  if (!voice) {
+    setStatus(
+      `❗ ${bcp47} の音声 (TTS) がこの端末にインストールされていません。⚙ 設定 → "TTS 音声" から OS への追加方法を確認してください。`,
+      "error"
+    );
+    return;
+  }
+
+  const u = new SpeechSynthesisUtterance(text);
+  u.voice = voice;
+  u.lang = voice.lang || bcp47;
+  u.rate = 1.0;
+  u.onerror = (ev) => {
+    setStatus(`❗ TTS エラー (${voice.name}): ${ev.error || "unknown"}`, "error");
+  };
+  // status を翻訳成功状態のまま維持しつつ、再生開始がわかるように軽く更新
+  u.onstart = () => { setStatus(`🔊 再生中: ${voice.name} (${voice.lang})`, "ok"); };
+  u.onend   = () => { /* 何もしない */ };
+  speechSynthesis.speak(u);
+}
+
+// ---------- providers ----------
+function buildSystemPrompt(srcLangCode, tgtLangCode, toneKey) {
+  const src = CFG.languages[srcLangCode].name;
+  const tgt = CFG.languages[tgtLangCode].name;
+  return CFG.system
+    .replaceAll("{SRC_NAME}", src)
+    .replaceAll("{TGT_NAME}", tgt)
+    .replaceAll("{TONE}", CFG.tones[toneKey]);
+}
+
+async function translateWithClaude(apiKey, system, userText) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1024,
+      system,
+      messages: [{ role: "user", content: userText }]
+    })
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Claude API ${res.status}: ${errText.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const block = (data.content || []).find(b => b.type === "text");
+  if (!block) throw new Error("Claude: no text content in response");
+  return block.text.trim();
+}
+
+async function translateWithGemini(apiKey, system, userText) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: "user", parts: [{ text: userText }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 1024 }
+    })
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Gemini API ${res.status}: ${errText.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const cand = (data.candidates || [])[0];
+  const part = cand && cand.content && (cand.content.parts || [])[0];
+  if (!part || !part.text) throw new Error("Gemini: no text in response");
+  return part.text.trim();
+}
+
+async function translate(srcLang, tgtLang, text) {
+  const system = buildSystemPrompt(srcLang, tgtLang, state.tone);
+  if (state.provider === "claude") {
+    const key = localStorage.getItem(LS.anthropicKey);
+    if (!key) throw new Error("Anthropic API キーが未設定です。⚙設定 から登録してください。");
+    return await translateWithClaude(key, system, text);
+  } else {
+    const key = localStorage.getItem(LS.googleKey);
+    if (!key) throw new Error("Google AI API キーが未設定です。⚙設定 から登録してください。");
+    return await translateWithGemini(key, system, text);
+  }
+}
+
+// ---------- push-to-talk wiring ----------
+function setupPTT(btnId, getDirection) {
+  const btn = document.getElementById(btnId);
+  let active = false;
+
+  const begin = (e) => {
+    e.preventDefault();
+    if (active || state.recognizingFor) return;
+    const { srcLang } = getDirection();
+    const langCfg = CFG.languages[srcLang];
+    state.recognizedText = "";
+    state.recognizingFor = btnId;
+    active = true;
+    btn.classList.add("recording");
+    setStatus(`🎤 ${langCfg.label} を録音中...`);
+    state.recognition = startRecognition(
+      langCfg.bcp47,
+      async (finalText) => {
+        const wasFor = state.recognizingFor;
+        state.recognizingFor = null;
+        state.recognition = null;
+        active = false;
+        btn.classList.remove("recording");
+        if (wasFor !== btnId) return;
+        if (!finalText) {
+          setStatus("（音声が認識できませんでした）", "error");
+          return;
+        }
+        await onRecognized(finalText, getDirection);
+      },
+      (err) => {
+        state.recognizingFor = null;
+        state.recognition = null;
+        active = false;
+        btn.classList.remove("recording");
+        setStatus(err, "error");
+      }
+    );
+  };
+
+  const end = (e) => {
+    e.preventDefault();
+    if (!active || !state.recognition) return;
+    try { state.recognition.stop(); } catch {}
+  };
+
+  btn.addEventListener("pointerdown", begin);
+  btn.addEventListener("pointerup", end);
+  btn.addEventListener("pointercancel", end);
+  btn.addEventListener("pointerleave", end);
+  // キーボード操作 (PC): Enter/Space で開始/終了 のトグル
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      if (!active) begin(e);
+    }
+  });
+  btn.addEventListener("keyup", (e) => {
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      if (active) end(e);
+    }
+  });
+}
+
+async function onRecognized(srcText, getDirection) {
+  const { srcLang, tgtLang } = getDirection();
+  const turn = { srcLang, tgtLang, srcText, tgtText: "", error: null, ts: Date.now() };
+  state.history.push(turn);
+  saveHistory();
+  renderHistory();
+  setStatus("翻訳中...");
+  try {
+    const out = await translate(srcLang, tgtLang, srcText);
+    turn.tgtText = out;
+    saveHistory();
+    renderHistory();
+    setStatus("OK", "ok");
+    speak(out, CFG.languages[tgtLang].bcp47);
+  } catch (e) {
+    turn.error = e.message;
+    saveHistory();
+    renderHistory();
+    setStatus(e.message, "error");
+  }
+}
+
+// ---------- settings dialog ----------
+async function refreshVoiceSelectors() {
+  const voices = await getVoicesAsync();
+  const langs = [
+    { sel: "#voiceJa", lang: "ja", lsKey: LS.voiceJa, sample: "テスト。これは日本語の音声です。" },
+    { sel: "#voiceTh", lang: "th", lsKey: LS.voiceTh, sample: "นี่คือเสียงทดสอบภาษาไทย" },
+    { sel: "#voiceEn", lang: "en", lsKey: LS.voiceEn, sample: "This is an English voice test." }
+  ];
+  for (const cfg of langs) {
+    const select = $(cfg.sel);
+    const cur = localStorage.getItem(cfg.lsKey) || "";
+    select.innerHTML = "";
+    select.appendChild(el("option", { value: "" }, "自動選択"));
+    const matched = voices.filter(v => langKey(v.lang) === cfg.lang);
+    if (matched.length === 0) {
+      const opt = el("option", { value: "", disabled: "disabled" }, "(該当する voice なし)");
+      select.appendChild(opt);
+    } else {
+      for (const v of matched) {
+        const opt = el("option", { value: v.name }, `${v.name}  [${v.lang}]${v.localService ? "" : "  (オンライン)"}`);
+        if (v.name === cur) opt.selected = true;
+        select.appendChild(opt);
+      }
+    }
+  }
+  const summary = `${voices.length} voices: ja=${voices.filter(v=>langKey(v.lang)==="ja").length}, th=${voices.filter(v=>langKey(v.lang)==="th").length}, en=${voices.filter(v=>langKey(v.lang)==="en").length}`;
+  const sumEl = $("#voicesSummary");
+  if (sumEl) {
+    sumEl.textContent = summary;
+    sumEl.className = "test-result " + (voices.filter(v=>langKey(v.lang)==="th").length ? "ok" : "err");
+  }
+}
+
+function openSettings() {
+  $("#anthropicKey").value = localStorage.getItem(LS.anthropicKey) || "";
+  $("#googleKey").value    = localStorage.getItem(LS.googleKey)    || "";
+  for (const r of document.querySelectorAll("input[name=defaultProvider]")) {
+    r.checked = (r.value === state.provider);
+  }
+  $("#defaultTone").value = state.tone;
+  $("#defaultPair").value = state.pair;
+  $("#anthropicResult").textContent = "";
+  $("#anthropicResult").className = "test-result";
+  $("#googleResult").textContent = "";
+  $("#googleResult").className = "test-result";
+  refreshVoiceSelectors();
+  $("#settings").showModal();
+}
+
+function saveSettingsFromDialog() {
+  const ak = $("#anthropicKey").value.trim();
+  const gk = $("#googleKey").value.trim();
+  if (ak) localStorage.setItem(LS.anthropicKey, ak); else localStorage.removeItem(LS.anthropicKey);
+  if (gk) localStorage.setItem(LS.googleKey, gk);    else localStorage.removeItem(LS.googleKey);
+
+  const prov = (document.querySelector("input[name=defaultProvider]:checked") || {}).value;
+  if (prov) {
+    state.provider = prov;
+    localStorage.setItem(LS.provider, prov);
+    $("#provider").value = prov;
+  }
+  const t = $("#defaultTone").value;
+  state.tone = t; localStorage.setItem(LS.tone, t); $("#tone").value = t;
+  const p = $("#defaultPair").value;
+  state.pair = p; localStorage.setItem(LS.pair, p); $("#pair").value = p;
+  applyPairUI();
+
+  // voice 選択を保存 (空文字なら削除 = 自動選択)
+  const vJa = $("#voiceJa").value;
+  if (vJa) localStorage.setItem(LS.voiceJa, vJa); else localStorage.removeItem(LS.voiceJa);
+  const vTh = $("#voiceTh").value;
+  if (vTh) localStorage.setItem(LS.voiceTh, vTh); else localStorage.removeItem(LS.voiceTh);
+  const vEn = $("#voiceEn").value;
+  if (vEn) localStorage.setItem(LS.voiceEn, vEn); else localStorage.removeItem(LS.voiceEn);
+}
+
+function attachShowToggle(inputId, btnId) {
+  $(btnId).addEventListener("click", () => {
+    const inp = $(inputId);
+    inp.type = inp.type === "password" ? "text" : "password";
+  });
+}
+
+function attachClearKey(btnId, inputId, lsKey, resultId) {
+  $(btnId).addEventListener("click", () => {
+    if (!confirm("このブラウザに保存された API キーを削除します。よろしいですか？")) return;
+    localStorage.removeItem(lsKey);
+    $(inputId).value = "";
+    const r = $(resultId);
+    r.textContent = "削除済み";
+    r.className = "test-result";
+  });
+}
+
+async function testClaudeKey() {
+  const key = $("#anthropicKey").value.trim();
+  const out = $("#anthropicResult");
+  if (!key) { out.textContent = "キー未入力"; out.className = "test-result err"; return; }
+  if (!key.startsWith("sk-ant-")) {
+    out.textContent = "形式が違うかも (sk-ant- で始まるはず)";
+    out.className = "test-result err"; return;
+  }
+  out.textContent = "確認中...";
+  out.className = "test-result";
+  try {
+    const reply = await translateWithClaude(key, "Reply with just the word: OK", "ping");
+    out.textContent = reply.length > 30 ? "応答受信" : `OK (${reply})`;
+    out.className = "test-result ok";
+  } catch (e) {
+    out.textContent = e.message.slice(0, 80);
+    out.className = "test-result err";
+  }
+}
+
+async function testGoogleKey() {
+  const key = $("#googleKey").value.trim();
+  const out = $("#googleResult");
+  if (!key) { out.textContent = "キー未入力"; out.className = "test-result err"; return; }
+  if (!key.startsWith("AIza")) {
+    out.textContent = "形式が違うかも (AIza で始まるはず)";
+    out.className = "test-result err"; return;
+  }
+  out.textContent = "確認中...";
+  out.className = "test-result";
+  try {
+    const reply = await translateWithGemini(key, "Reply with just the word: OK", "ping");
+    out.textContent = reply.length > 30 ? "応答受信" : `OK (${reply})`;
+    out.className = "test-result ok";
+  } catch (e) {
+    out.textContent = e.message.slice(0, 80);
+    out.className = "test-result err";
+  }
+}
+
+// ---------- init ----------
+function init() {
+  // 初期セレクト反映
+  $("#provider").value = state.provider;
+  $("#tone").value     = state.tone;
+  $("#pair").value     = state.pair;
+  applyPairUI();
+
+  $("#provider").addEventListener("change", e => {
+    state.provider = e.target.value;
+    localStorage.setItem(LS.provider, state.provider);
+  });
+  $("#tone").addEventListener("change", e => {
+    state.tone = e.target.value;
+    localStorage.setItem(LS.tone, state.tone);
+  });
+  $("#pair").addEventListener("change", e => {
+    state.pair = e.target.value;
+    localStorage.setItem(LS.pair, state.pair);
+    applyPairUI();
+  });
+
+  // PTT: A はペアの先頭言語 (例 ja-th なら ja → th)
+  setupPTT("pttA", () => {
+    const [a, b] = pairLangs(state.pair);
+    return { srcLang: a, tgtLang: b };
+  });
+  setupPTT("pttB", () => {
+    const [a, b] = pairLangs(state.pair);
+    return { srcLang: b, tgtLang: a };
+  });
+
+  // settings
+  $("#openSettings").addEventListener("click", openSettings);
+  $("#saveSettings").addEventListener("click", (e) => {
+    saveSettingsFromDialog();
+  });
+  attachShowToggle("#anthropicKey", "#anthropicShow");
+  attachShowToggle("#googleKey",    "#googleShow");
+  attachClearKey("#anthropicClear", "#anthropicKey", LS.anthropicKey, "#anthropicResult");
+  attachClearKey("#googleClear",    "#googleKey",    LS.googleKey,    "#googleResult");
+  $("#anthropicTest").addEventListener("click", testClaudeKey);
+  $("#googleTest").addEventListener("click",    testGoogleKey);
+  $("#refreshVoices").addEventListener("click", () => {
+    _voicesCache = null;
+    refreshVoiceSelectors();
+  });
+  // テスト再生: ダイアログ内で現在選択中の voice を試す
+  const testSamples = {
+    "#testVoiceJa": { sel: "#voiceJa", bcp47: "ja-JP", text: "テスト。これは日本語の音声です。" },
+    "#testVoiceTh": { sel: "#voiceTh", bcp47: "th-TH", text: "นี่คือเสียงทดสอบภาษาไทย" },
+    "#testVoiceEn": { sel: "#voiceEn", bcp47: "en-US", text: "This is an English voice test." }
+  };
+  for (const [btnSel, cfg] of Object.entries(testSamples)) {
+    $(btnSel).addEventListener("click", async () => {
+      const voices = await getVoicesAsync();
+      const chosen = $(cfg.sel).value;
+      const v = findVoiceFor(cfg.bcp47, voices, chosen || null);
+      if (!v) {
+        setStatus(`❗ ${cfg.bcp47} の voice が見つかりません。OS への音声追加手順を確認してください。`, "error");
+        return;
+      }
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(cfg.text);
+      u.voice = v; u.lang = v.lang || cfg.bcp47;
+      u.onerror = (ev) => setStatus(`❗ TTS エラー (${v.name}): ${ev.error || "unknown"}`, "error");
+      u.onstart = () => setStatus(`🔊 テスト再生: ${v.name} (${v.lang})`, "ok");
+      speechSynthesis.speak(u);
+    });
+  }
+  $("#clearHistory").addEventListener("click", () => {
+    if (!confirm("会話履歴をすべて削除します。よろしいですか？")) return;
+    state.history = [];
+    saveHistory();
+    renderHistory();
+  });
+
+  renderHistory();
+
+  // 初回起動時: キー未設定なら設定ダイアログを自動オープン
+  const hasAnyKey = localStorage.getItem(LS.anthropicKey) || localStorage.getItem(LS.googleKey);
+  if (!hasAnyKey) {
+    setStatus("初回設定: API キーを登録してください。", "error");
+    setTimeout(openSettings, 200);
+  }
+
+  // 環境チェック
+  if (!getSR()) {
+    setStatus("このブラウザは音声入力に未対応 (Firefox など)。Chrome/Edge/Safari でお試しください。", "error");
+  } else if (location.protocol === "file:") {
+    setStatus("file:// では音声入力が動きません。`python3 -m http.server` 等で http://localhost から開いてください。", "error");
+  }
+
+  // TTS voice の事前ロード (検出に時間がかかるブラウザ向け)
+  getVoicesAsync().then(voices => {
+    if (!voices || voices.length === 0) return;
+    const thCount = voices.filter(v => langKey(v.lang) === "th").length;
+    if (thCount === 0) {
+      console.warn("[TTS] タイ語の voice がこの環境には存在しません。設定 → TTS 音声 → 対処方法を参照。");
+    }
+  });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
+</script>
+</body>
+</html>
