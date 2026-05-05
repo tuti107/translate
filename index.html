@@ -88,11 +88,26 @@
     display: flex; gap: 8px; align-items: flex-start;
   }
   .turn .lang {
-    font-size: 12px; color: var(--muted); flex: 0 0 36px;
+    font-size: 18px; color: var(--muted); flex: 0 0 28px; text-align: center;
+    line-height: 1.6;
   }
   .turn .text {
     flex: 1; word-break: break-word;
   }
+  .turn .text.editable { cursor: text; }
+  .turn .text.editable:hover { background: rgba(255,255,255,0.04); border-radius: 6px; }
+  .turn .raw { color: var(--muted); font-size: 12px; text-decoration: line-through; }
+  .edit-area textarea {
+    width: 100%; min-height: 60px; resize: vertical;
+    font: inherit; color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--accent);
+    border-radius: 8px; padding: 6px 8px;
+  }
+  .edit-area .edit-actions {
+    display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end;
+  }
+  .edit-area .edit-actions button { padding: 6px 10px; font-size: 12px; }
   .turn .actions { display: flex; gap: 6px; margin-left: 8px; }
   .turn .actions button { padding: 4px 8px; font-size: 12px; }
   .turn .tgt .text { color: #cfe3ff; font-weight: 500; }
@@ -565,7 +580,9 @@ function applyPairUI() {
   $("#pairLabel").textContent = `(${A.label} ↔ ${B.label})`;
 }
 
-// ---------- history rendering ----------
+// 編集中のターン index (null なら通常表示)
+let _editingIdx = null;
+
 function renderHistory() {
   const h = $("#history");
   h.innerHTML = "";
@@ -574,34 +591,111 @@ function renderHistory() {
       "下のボタンを押している間、音声を取り込みます。"));
     return;
   }
-  for (const t of state.history) {
+  state.history.forEach((t, idx) => {
     const src = CFG.languages[t.srcLang], tgt = CFG.languages[t.tgtLang];
     const tDiv = el("div", { class: "turn" + (t.error ? " error" : "") });
-    // 元発話: 校正があれば「raw → corrected」を併記
-    const srcTextNode = el("div", { class: "text" });
-    if (t.rawText && t.correctedText && t.rawText !== t.correctedText) {
-      srcTextNode.appendChild(el("div", { style: "color:var(--muted); font-size:12px; text-decoration: line-through;" }, t.rawText));
-      srcTextNode.appendChild(el("div", {}, t.correctedText));
+
+    // 元発話エリア
+    const srcRow = el("div", { class: "src" },
+      el("div", { class: "lang", title: src.label }, src.flag)
+    );
+    if (idx === _editingIdx) {
+      // 編集モード: textarea + 再翻訳/キャンセル
+      const editArea = el("div", { class: "text edit-area" });
+      const ta = el("textarea", { rows: 2 });
+      ta.value = t.srcText || t.correctedText || t.rawText || "";
+      const saveBtn = el("button", { class: "primary" }, "再翻訳");
+      const cancelBtn = el("button", {}, "キャンセル");
+      saveBtn.addEventListener("click", () => commitEdit(idx, ta.value));
+      cancelBtn.addEventListener("click", () => { _editingIdx = null; renderHistory(); });
+      ta.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          commitEdit(idx, ta.value);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          _editingIdx = null; renderHistory();
+        }
+      });
+      editArea.appendChild(ta);
+      editArea.appendChild(el("div", { class: "edit-actions" }, cancelBtn, saveBtn));
+      srcRow.appendChild(editArea);
+      // 編集 textarea にフォーカス (次フレーム)
+      setTimeout(() => { ta.focus(); ta.select(); }, 0);
     } else {
-      srcTextNode.textContent = t.srcText || t.rawText || "";
+      // 通常表示: クリックで編集モードへ
+      const srcTextNode = el("div", { class: "text editable", title: "クリックで編集 → 再翻訳" });
+      if (t.rawText && t.correctedText && t.rawText !== t.correctedText) {
+        srcTextNode.appendChild(el("div", { class: "raw" }, t.rawText));
+        srcTextNode.appendChild(el("div", {}, t.correctedText));
+      } else {
+        srcTextNode.textContent = t.srcText || t.rawText || "";
+      }
+      srcTextNode.addEventListener("click", () => { _editingIdx = idx; renderHistory(); });
+      srcRow.appendChild(srcTextNode);
     }
-    tDiv.appendChild(el("div", { class: "src" },
-      el("div", { class: "lang" }, `${src.flag} ${src.label}`),
-      srcTextNode
-    ));
+    tDiv.appendChild(srcRow);
+
+    // 翻訳結果エリア
+    const tgtTextNode = el("div", { class: "text" + (t.tgtText && !t.error ? " editable" : "") });
+    tgtTextNode.textContent = t.tgtText || (t.error ? `❗ ${t.error}` : "...");
+    if (t.tgtText && !t.error) {
+      tgtTextNode.title = "クリックで原文を編集 → 再翻訳";
+      tgtTextNode.addEventListener("click", () => { _editingIdx = idx; renderHistory(); });
+    }
     const tgtRow = el("div", { class: "tgt" },
-      el("div", { class: "lang" }, `${tgt.flag} ${tgt.label}`),
-      el("div", { class: "text" }, t.tgtText || (t.error ? `❗ ${t.error}` : "..."))
+      el("div", { class: "lang", title: tgt.label }, tgt.flag),
+      tgtTextNode
     );
     if (t.tgtText && !t.error) {
       const playBtn = el("button", { class: "icon", title: "再生" }, "🔊");
-      playBtn.addEventListener("click", () => speak(t.tgtText, tgt.bcp47));
+      playBtn.addEventListener("click", (e) => { e.stopPropagation(); speak(t.tgtText, tgt.bcp47); });
       tgtRow.appendChild(el("div", { class: "actions" }, playBtn));
     }
     tDiv.appendChild(tgtRow);
     h.appendChild(tDiv);
-  }
+  });
   h.scrollTop = h.scrollHeight;
+}
+
+async function commitEdit(idx, newText) {
+  const trimmed = (newText || "").trim();
+  if (!trimmed) {
+    _editingIdx = null;
+    renderHistory();
+    return;
+  }
+  const turn = state.history[idx];
+  if (!turn) return;
+  // 内容変化なし → 編集モード解除のみ
+  const before = turn.srcText || turn.correctedText || turn.rawText || "";
+  if (trimmed === before) {
+    _editingIdx = null;
+    renderHistory();
+    return;
+  }
+  turn.srcText = trimmed;
+  turn.correctedText = trimmed;
+  turn.manuallyEdited = true;
+  turn.tgtText = "";
+  turn.error = null;
+  _editingIdx = null;
+  saveHistory();
+  renderHistory();
+  setStatus("再翻訳中 (手修正後)...");
+  try {
+    const out = await translate(turn.srcLang, turn.tgtLang, trimmed);
+    turn.tgtText = out;
+    saveHistory();
+    renderHistory();
+    setStatus("OK", "ok");
+    speak(out, CFG.languages[turn.tgtLang].bcp47);
+  } catch (e) {
+    turn.error = e.message;
+    saveHistory();
+    renderHistory();
+    setStatus(e.message, "error");
+  }
 }
 
 // ---------- speech recognition (STT) ----------
@@ -818,6 +912,27 @@ async function translateWithClaude(apiKey, modelId, system, userText) {
   return block.text.trim();
 }
 
+// Gemini 2.5 Pro 等の thinking モデルは parts 配列に thought=true の要素を含むことがある。
+// それを除外し、本文 text のみを連結して返す。
+function extractGeminiText(data) {
+  const cand = (data.candidates || [])[0];
+  if (!cand) throw new Error("Gemini: no candidates in response");
+  const fr = cand.finishReason;
+  if (fr && fr !== "STOP" && fr !== "MAX_TOKENS" && fr !== null) {
+    throw new Error(`Gemini: finishReason=${fr}`);
+  }
+  const parts = (cand.content && cand.content.parts) || [];
+  const texts = parts
+    .filter(p => p && typeof p.text === "string" && p.thought !== true)
+    .map(p => p.text);
+  const out = texts.join("").trim();
+  if (!out) {
+    const dbg = `finishReason=${fr || "?"}, parts=${parts.length}, withText=${parts.filter(p=>p&&p.text).length}, thoughts=${parts.filter(p=>p&&p.thought).length}`;
+    throw new Error(`Gemini: no text in response (${dbg})`);
+  }
+  return out;
+}
+
 async function translateWithGemini(apiKey, modelId, system, userText) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const res = await fetch(url, {
@@ -826,18 +941,18 @@ async function translateWithGemini(apiKey, modelId, system, userText) {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: userText }] }],
-      generationConfig: { temperature: 0.3, maxOutputTokens: 1024 }
+      generationConfig: {
+        temperature: 0.3,
+        // 2.5 Pro / 3 Pro は thinking 出力で枠を消費するので余裕を持たせる
+        maxOutputTokens: 8192
+      }
     })
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
     throw new Error(`Gemini API ${res.status}: ${errText.slice(0, 300)}`);
   }
-  const data = await res.json();
-  const cand = (data.candidates || [])[0];
-  const part = cand && cand.content && (cand.content.parts || [])[0];
-  if (!part || !part.text) throw new Error("Gemini: no text in response");
-  return part.text.trim();
+  return extractGeminiText(await res.json());
 }
 
 async function translate(srcLang, tgtLang, text, modelId) {
@@ -888,18 +1003,14 @@ async function correctTranscription(audioBlob, rawText, srcLang) {
           { text: prompt }
         ]
       }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 512 }
+      generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
     })
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
     throw new Error(`校正 API ${res.status}: ${errText.slice(0, 300)}`);
   }
-  const data = await res.json();
-  const cand = (data.candidates || [])[0];
-  const part = cand && cand.content && (cand.content.parts || [])[0];
-  if (!part || !part.text) throw new Error("校正 API: no text in response");
-  return part.text.trim();
+  return extractGeminiText(await res.json());
 }
 
 function blobToBase64(blob) {
