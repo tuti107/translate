@@ -197,14 +197,11 @@
 <main>
   <div class="toolbar">
     <div>
-      <label for="provider">プロバイダ</label>
-      <select id="provider">
-        <option value="claude">Claude Sonnet 4.6</option>
-        <option value="gemini">Gemini 2.5 Flash</option>
-      </select>
+      <label for="model">モデル</label>
+      <select id="model"></select>
     </div>
     <div>
-      <label for="tone">モード</label>
+      <label for="tone">トーン</label>
       <select id="tone">
         <option value="business">ビジネス（敬語）</option>
         <option value="casual">カジュアル（部下向け）</option>
@@ -214,11 +211,20 @@
     <div>
       <label for="pair">言語ペア</label>
       <select id="pair">
-        <option value="ja-th">🇯🇵 日本語 ↔ 🇹🇭 タイ語</option>
-        <option value="ja-en">🇯🇵 日本語 ↔ 🇬🇧 英語</option>
-        <option value="en-th">🇬🇧 英語 ↔ 🇹🇭 タイ語</option>
+        <option value="ja-th">🇯🇵 日 ↔ 🇹🇭 タイ</option>
+        <option value="ja-en">🇯🇵 日 ↔ 🇬🇧 英</option>
+        <option value="en-th">🇬🇧 英 ↔ 🇹🇭 タイ</option>
       </select>
     </div>
+  </div>
+
+  <div class="row" style="margin: 0 0 12px; gap: 12px; align-items: center;">
+    <label style="margin: 0; display:flex; align-items:center; gap:6px; cursor:pointer;">
+      <input type="checkbox" id="correctMode"> 校正モード
+      <span class="meta" style="color: var(--muted); font-size:12px;">
+        録音音声を AI に渡して STT 結果を補正 (Gemini 必須)
+      </span>
+    </label>
   </div>
 
   <div class="history" id="history">
@@ -239,9 +245,12 @@
       <h2>⚙ 設定</h2>
 
       <div class="group">
-        <h3>翻訳プロバイダ</h3>
-        <label><input type="radio" name="defaultProvider" value="claude"> Claude Sonnet 4.6</label>
-        <label><input type="radio" name="defaultProvider" value="gemini"> Gemini 2.5 Flash</label>
+        <h3>翻訳モデル</h3>
+        <label for="defaultModel">デフォルトの翻訳モデル</label>
+        <select id="defaultModel"></select>
+        <div class="callout tip" style="margin-top:6px;">
+          💡 Claude 系 (Anthropic) と Gemini 系 (Google) でそれぞれ別の API キーが必要です。
+        </div>
       </div>
 
       <div class="group">
@@ -305,8 +314,27 @@
       </div>
 
       <div class="group">
+        <h3>校正モード (録音音声で STT 結果を補正)</h3>
+        <p style="font-size:12px; color:var(--muted); margin:0 0 6px;">
+          端末の音声認識は同音異義語に弱いため (例: 過酢酸→浅草)、録音した音声を AI に渡して校正します。
+          校正には音声を入力できる Gemini モデルが必要です。Google AI API キーが必須。
+        </p>
+        <label><input type="checkbox" id="defaultCorrectMode"> 校正モードを既定でオンにする</label>
+        <label for="defaultCorrectModel">校正モデル</label>
+        <select id="defaultCorrectModel">
+          <option value="auto">自動 (翻訳モデルが Gemini ならそれ、Claude なら Gemini 2.5 Flash)</option>
+        </select>
+        <label for="domainHint">専門分野・よく使う用語ヒント</label>
+        <textarea id="domainHint" rows="4" placeholder="例:&#10;化学系の研究開発業務。&#10;頻出用語: 過酢酸, 過酸化水素, 酢酸エチル, トルエン, モル濃度, 還元剤, 酸化反応"
+          style="width:100%; resize:vertical; font:inherit; color:var(--text); background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:8px 10px;"></textarea>
+        <div class="callout tip" style="margin-top:6px;">
+          💡 ヒントは校正と翻訳の両方のプロンプトに含まれます。専門用語を列挙するほど精度が上がります。
+        </div>
+      </div>
+
+      <div class="group">
         <h3>デフォルト</h3>
-        <label for="defaultTone">モード</label>
+        <label for="defaultTone">トーン</label>
         <select id="defaultTone">
           <option value="business">ビジネス</option>
           <option value="casual">カジュアル</option>
@@ -314,9 +342,9 @@
         </select>
         <label for="defaultPair">言語ペア</label>
         <select id="defaultPair">
-          <option value="ja-th">日本語 ↔ タイ語</option>
-          <option value="ja-en">日本語 ↔ 英語</option>
-          <option value="en-th">英語 ↔ タイ語</option>
+          <option value="ja-th">🇯🇵 日 ↔ 🇹🇭 タイ</option>
+          <option value="ja-en">🇯🇵 日 ↔ 🇬🇧 英</option>
+          <option value="en-th">🇬🇧 英 ↔ 🇹🇭 タイ</option>
         </select>
       </div>
 
@@ -418,16 +446,25 @@
 <!-- プロンプト定義 (HTML 編集だけで微調整できるよう外出し) -->
 <script type="application/json" id="promptConfig">
 {
-  "system": "You are a professional translator. Translate the user's text from {SRC_NAME} to {TGT_NAME}. Output ONLY the translated text. Do not add explanations, romanization, parenthetical notes, quotation marks, or the original text. Preserve proper nouns, numbers, and the speaker's intent. Match the requested tone exactly.\n\nTone: {TONE}\n\nIf the input is ambiguous or appears to be a fragment, translate it as-is without asking for clarification.",
+  "models": [
+    { "id": "claude-sonnet-4-6",     "label": "Claude Sonnet 4.6",        "family": "claude", "audio": false },
+    { "id": "claude-opus-4-7",       "label": "Claude Opus 4.7",          "family": "claude", "audio": false },
+    { "id": "claude-haiku-4-5",      "label": "Claude Haiku 4.5 (低コスト)", "family": "claude", "audio": false },
+    { "id": "gemini-3-pro-preview",  "label": "Gemini 3 Pro (preview)",   "family": "gemini", "audio": true  },
+    { "id": "gemini-2.5-pro",        "label": "Gemini 2.5 Pro",           "family": "gemini", "audio": true  },
+    { "id": "gemini-2.5-flash",      "label": "Gemini 2.5 Flash (低コスト)", "family": "gemini", "audio": true  }
+  ],
+  "system": "You are a professional translator. Translate the user's text from {SRC_NAME} to {TGT_NAME}. Output ONLY the translated text. Do not add explanations, romanization, parenthetical notes, quotation marks, or the original text. Preserve proper nouns, numbers, and the speaker's intent. Match the requested tone exactly.\n\nTone: {TONE}\n\nDomain context (the speaker's professional field and frequent terminology, may be empty):\n{DOMAIN_HINT}\n\nIf the input is ambiguous or appears to be a fragment, translate it as-is without asking for clarification.",
+  "correction": "You are a speech recognition corrector. The user provided audio of their actual speech, plus the on-device speech-to-text result which may contain misrecognitions (especially homophones and domain-specific terminology).\n\nLanguage of the speech: {SRC_NAME}\nOn-device transcription: \"{RAW_TEXT}\"\n\nDomain context (the speaker's professional field and frequent terminology):\n{DOMAIN_HINT}\n\nListen to the audio carefully. Output the most accurate, natural transcription of what was actually said. Pay special attention to:\n- Homophones in Japanese (e.g. technical chemistry terms like 過酢酸 mis-recognized as 浅草).\n- Domain-specific vocabulary listed in the domain context.\n- Proper nouns and numbers spoken by the user.\n\nOutput ONLY the corrected transcription text in {SRC_NAME}. No explanations, no quotation marks, no parenthetical notes, no translation.",
   "tones": {
     "business": "Polite formal business register. In Japanese use 敬語 (尊敬語/丁寧語) suitable for clients and superiors. In Thai use ภาษาทางการสุภาพ with ครับ/ค่ะ as appropriate. In English use professional, courteous business tone.",
     "casual": "Polite but friendly tone — slightly less formal than business. For talking to junior colleagues or peers. In Japanese use 丁寧語 (です/ます) without heavy 尊敬語. In Thai use สุภาพแต่เป็นกันเอง. In English use warm but professional tone.",
     "intimate": "Warm, casual, intimate tone — as if speaking to a close partner or friend. In Japanese use natural casual speech (くだけた口調, タメ口は文脈に応じて). In Thai use คำพูดสนิทสนม. In English use casual conversational tone."
   },
   "languages": {
-    "ja": { "name": "Japanese (日本語)", "bcp47": "ja-JP", "flag": "🇯🇵", "label": "日本語" },
-    "th": { "name": "Thai (ภาษาไทย)", "bcp47": "th-TH", "flag": "🇹🇭", "label": "ไทย" },
-    "en": { "name": "English",        "bcp47": "en-US", "flag": "🇬🇧", "label": "English" }
+    "ja": { "name": "Japanese (日本語)", "bcp47": "ja-JP", "flag": "🇯🇵", "label": "日",   "labelLong": "日本語" },
+    "th": { "name": "Thai (ภาษาไทย)",   "bcp47": "th-TH", "flag": "🇹🇭", "label": "タイ", "labelLong": "ไทย" },
+    "en": { "name": "English",          "bcp47": "en-US", "flag": "🇬🇧", "label": "英",   "labelLong": "English" }
   }
 }
 </script>
@@ -440,24 +477,44 @@ const CFG = JSON.parse(document.getElementById("promptConfig").textContent);
 const LS = {
   anthropicKey: "tt_anthropic_key",
   googleKey:    "tt_google_key",
-  provider:     "tt_provider",
+  model:        "tt_model",
   tone:         "tt_tone",
   pair:         "tt_pair",
   history:      "tt_history",
   voiceJa:      "tt_voice_ja",
   voiceTh:      "tt_voice_th",
-  voiceEn:      "tt_voice_en"
+  voiceEn:      "tt_voice_en",
+  correctMode:  "tt_correct_mode",
+  correctModel: "tt_correct_model",
+  domainHint:   "tt_domain_hint"
 };
 
+// 旧キー (provider) からの片方向移行
+(function migrate() {
+  const oldProvider = localStorage.getItem("tt_provider");
+  if (oldProvider && !localStorage.getItem(LS.model)) {
+    localStorage.setItem(LS.model, oldProvider === "claude" ? "claude-sonnet-4-6" : "gemini-2.5-flash");
+  }
+})();
+
+function modelById(id) { return CFG.models.find(m => m.id === id); }
+function defaultModel() { return CFG.models[0].id; }
+
 const state = {
-  provider: localStorage.getItem(LS.provider) || "claude",
-  tone:     localStorage.getItem(LS.tone)     || "business",
-  pair:     localStorage.getItem(LS.pair)     || "ja-th",
+  model:    localStorage.getItem(LS.model)        || defaultModel(),
+  tone:     localStorage.getItem(LS.tone)         || "business",
+  pair:     localStorage.getItem(LS.pair)         || "ja-th",
+  correctMode:  localStorage.getItem(LS.correctMode) === "1",
+  correctModel: localStorage.getItem(LS.correctModel) || "auto",
+  domainHint:   localStorage.getItem(LS.domainHint)   || "",
   history:  loadHistory(),
   recognition: null,
   recognizingFor: null, // 'A' | 'B' | null
   recognizedText: "",
-  micGranted: false
+  micGranted: false,
+  mediaRecorder: null,
+  audioChunks: [],
+  audioStream: null
 };
 
 function loadHistory() {
@@ -503,8 +560,8 @@ function applyPairUI() {
   const A = CFG.languages[a], B = CFG.languages[b];
   $("#pttALabel").textContent = `${A.flag} ${A.label}`;
   $("#pttBLabel").textContent = `${B.flag} ${B.label}`;
-  $("#pttAHint").textContent = `押して${A.label}を話す`;
-  $("#pttBHint").textContent = `押して${B.label}を話す`;
+  $("#pttAHint").textContent = `押して${A.labelLong || A.label}を話す`;
+  $("#pttBHint").textContent = `押して${B.labelLong || B.label}を話す`;
   $("#pairLabel").textContent = `(${A.label} ↔ ${B.label})`;
 }
 
@@ -520,9 +577,17 @@ function renderHistory() {
   for (const t of state.history) {
     const src = CFG.languages[t.srcLang], tgt = CFG.languages[t.tgtLang];
     const tDiv = el("div", { class: "turn" + (t.error ? " error" : "") });
+    // 元発話: 校正があれば「raw → corrected」を併記
+    const srcTextNode = el("div", { class: "text" });
+    if (t.rawText && t.correctedText && t.rawText !== t.correctedText) {
+      srcTextNode.appendChild(el("div", { style: "color:var(--muted); font-size:12px; text-decoration: line-through;" }, t.rawText));
+      srcTextNode.appendChild(el("div", {}, t.correctedText));
+    } else {
+      srcTextNode.textContent = t.srcText || t.rawText || "";
+    }
     tDiv.appendChild(el("div", { class: "src" },
       el("div", { class: "lang" }, `${src.flag} ${src.label}`),
-      el("div", { class: "text" }, t.srcText)
+      srcTextNode
     ));
     const tgtRow = el("div", { class: "tgt" },
       el("div", { class: "lang" }, `${tgt.flag} ${tgt.label}`),
@@ -715,10 +780,19 @@ function buildSystemPrompt(srcLangCode, tgtLangCode, toneKey) {
   return CFG.system
     .replaceAll("{SRC_NAME}", src)
     .replaceAll("{TGT_NAME}", tgt)
-    .replaceAll("{TONE}", CFG.tones[toneKey]);
+    .replaceAll("{TONE}", CFG.tones[toneKey])
+    .replaceAll("{DOMAIN_HINT}", state.domainHint || "(none)");
 }
 
-async function translateWithClaude(apiKey, system, userText) {
+function buildCorrectionPrompt(srcLangCode, rawText) {
+  const src = CFG.languages[srcLangCode].name;
+  return CFG.correction
+    .replaceAll("{SRC_NAME}", src)
+    .replaceAll("{RAW_TEXT}", rawText.replace(/"/g, "'"))
+    .replaceAll("{DOMAIN_HINT}", state.domainHint || "(none)");
+}
+
+async function translateWithClaude(apiKey, modelId, system, userText) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -728,7 +802,7 @@ async function translateWithClaude(apiKey, system, userText) {
       "anthropic-dangerous-direct-browser-access": "true"
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-6",
+      model: modelId,
       max_tokens: 1024,
       system,
       messages: [{ role: "user", content: userText }]
@@ -744,8 +818,8 @@ async function translateWithClaude(apiKey, system, userText) {
   return block.text.trim();
 }
 
-async function translateWithGemini(apiKey, system, userText) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+async function translateWithGemini(apiKey, modelId, system, userText) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -766,17 +840,117 @@ async function translateWithGemini(apiKey, system, userText) {
   return part.text.trim();
 }
 
-async function translate(srcLang, tgtLang, text) {
+async function translate(srcLang, tgtLang, text, modelId) {
+  const m = modelById(modelId || state.model);
+  if (!m) throw new Error(`不明なモデル: ${modelId || state.model}`);
   const system = buildSystemPrompt(srcLang, tgtLang, state.tone);
-  if (state.provider === "claude") {
+  if (m.family === "claude") {
     const key = localStorage.getItem(LS.anthropicKey);
-    if (!key) throw new Error("Anthropic API キーが未設定です。⚙設定 から登録してください。");
-    return await translateWithClaude(key, system, text);
+    if (!key) throw new Error("Anthropic API キーが未設定です。⚙ 設定 から登録してください。");
+    return await translateWithClaude(key, m.id, system, text);
   } else {
     const key = localStorage.getItem(LS.googleKey);
-    if (!key) throw new Error("Google AI API キーが未設定です。⚙設定 から登録してください。");
-    return await translateWithGemini(key, system, text);
+    if (!key) throw new Error("Google AI API キーが未設定です。⚙ 設定 から登録してください。");
+    return await translateWithGemini(key, m.id, system, text);
   }
+}
+
+// 校正に使うモデルを決定
+function resolveCorrectionModel() {
+  if (state.correctModel && state.correctModel !== "auto") {
+    const m = modelById(state.correctModel);
+    if (m && m.audio) return m;
+  }
+  // auto: 翻訳モデルが Gemini ならそれ、Claude なら Gemini 2.5 Flash
+  const main = modelById(state.model);
+  if (main && main.family === "gemini" && main.audio) return main;
+  return modelById("gemini-2.5-flash");
+}
+
+async function correctTranscription(audioBlob, rawText, srcLang) {
+  const m = resolveCorrectionModel();
+  if (!m || m.family !== "gemini") throw new Error("校正には音声入力対応の Gemini モデルが必要です。");
+  const apiKey = localStorage.getItem(LS.googleKey);
+  if (!apiKey) throw new Error("校正には Google AI API キーが必要です。⚙ 設定 から登録してください。");
+  const base64 = await blobToBase64(audioBlob);
+  const mimeType = audioBlob.type && audioBlob.type.split(";")[0] ? audioBlob.type.split(";")[0] : "audio/webm";
+  const prompt = buildCorrectionPrompt(srcLang, rawText);
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m.id)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{
+        role: "user",
+        parts: [
+          { inlineData: { mimeType, data: base64 } },
+          { text: prompt }
+        ]
+      }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 512 }
+    })
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`校正 API ${res.status}: ${errText.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const cand = (data.candidates || [])[0];
+  const part = cand && cand.content && (cand.content.parts || [])[0];
+  if (!part || !part.text) throw new Error("校正 API: no text in response");
+  return part.text.trim();
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onloadend = () => {
+      const result = r.result || "";
+      const base64 = String(result).split(",")[1] || "";
+      resolve(base64);
+    };
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+// ---------- 並列マイクストリーム / 録音 ----------
+async function startAudioRecording() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error("録音 (getUserMedia) 未対応のブラウザです");
+  }
+  if (typeof MediaRecorder === "undefined") {
+    throw new Error("MediaRecorder 未対応のブラウザです");
+  }
+  state.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  state.audioChunks = [];
+  let mime = "";
+  for (const c of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]) {
+    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) { mime = c; break; }
+  }
+  state.mediaRecorder = new MediaRecorder(state.audioStream, mime ? { mimeType: mime } : {});
+  state.mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) state.audioChunks.push(e.data);
+  };
+  state.mediaRecorder.start();
+}
+
+function stopAudioRecording() {
+  return new Promise(resolve => {
+    if (!state.mediaRecorder) { resolve(null); return; }
+    const mr = state.mediaRecorder;
+    mr.onstop = () => {
+      const type = (mr.mimeType || "").split(";")[0] || "audio/webm";
+      const blob = new Blob(state.audioChunks, { type });
+      try { state.audioStream && state.audioStream.getTracks().forEach(t => t.stop()); } catch {}
+      state.mediaRecorder = null;
+      state.audioStream = null;
+      state.audioChunks = [];
+      resolve(blob);
+    };
+    try { mr.stop(); } catch { resolve(null); }
+  });
 }
 
 // ---------- push-to-talk wiring ----------
@@ -809,7 +983,19 @@ function setupPTT(btnId, getDirection) {
     state.recognizingFor = btnId;
     active = true;
     btn.classList.add("recording");
-    setStatus(`🎤 ${langCfg.label} を録音中...`);
+
+    // 校正モード時は MediaRecorder で並列録音
+    let recordingStarted = false;
+    if (state.correctMode) {
+      try {
+        await startAudioRecording();
+        recordingStarted = true;
+      } catch (e) {
+        setStatus(`録音開始失敗 (校正モードを一時的にスキップ): ${e.message}`, "error");
+      }
+    }
+
+    setStatus(`🎤 ${langCfg.label} を録音中...${recordingStarted ? " (校正用録音 ON)" : ""}`);
     state.recognition = startRecognition(
       langCfg.bcp47,
       async (finalText) => {
@@ -818,29 +1004,37 @@ function setupPTT(btnId, getDirection) {
         state.recognition = null;
         active = false;
         btn.classList.remove("recording");
+
+        // MediaRecorder を停止して blob 取得
+        let audioBlob = null;
+        if (recordingStarted) {
+          try { audioBlob = await stopAudioRecording(); } catch {}
+        }
+
         if (wasFor !== btnId) return;
         if (!finalText) {
-          // onerror でメッセージ済みならそちらを優先
           if (!$("#status").classList.contains("error")) {
             setStatus("（音声が認識できませんでした）", "error");
           }
           return;
         }
-        await onRecognized(finalText, getDirection);
+        await onRecognized(finalText, getDirection, audioBlob);
       },
-      (err) => {
+      async (err) => {
         state.recognizingFor = null;
         state.recognition = null;
         active = false;
         btn.classList.remove("recording");
+        if (recordingStarted) {
+          try { await stopAudioRecording(); } catch {}
+        }
         setStatus(err, "error");
-        // not-allowed は記憶を解除して次回再試行
         if (/許可/.test(err)) state.micGranted = false;
       }
     );
   };
 
-  const end = (e) => {
+  const end = async (e) => {
     e.preventDefault();
     if (!active || !state.recognition) return;
     try { state.recognition.stop(); } catch {}
@@ -865,15 +1059,44 @@ function setupPTT(btnId, getDirection) {
   });
 }
 
-async function onRecognized(srcText, getDirection) {
+async function onRecognized(rawText, getDirection, audioBlob) {
   const { srcLang, tgtLang } = getDirection();
-  const turn = { srcLang, tgtLang, srcText, tgtText: "", error: null, ts: Date.now() };
+  const turn = {
+    srcLang, tgtLang,
+    rawText: rawText,
+    correctedText: "",
+    srcText: rawText,
+    tgtText: "",
+    error: null,
+    ts: Date.now()
+  };
   state.history.push(turn);
   saveHistory();
   renderHistory();
+
+  // 校正フェーズ
+  let textToTranslate = rawText;
+  if (state.correctMode && audioBlob && audioBlob.size > 0) {
+    setStatus("🛠 校正中 (録音音声を AI で解析)...");
+    try {
+      const corrected = await correctTranscription(audioBlob, rawText, srcLang);
+      if (corrected && corrected !== rawText) {
+        turn.correctedText = corrected;
+        turn.srcText = corrected;
+        textToTranslate = corrected;
+        renderHistory();
+      } else {
+        turn.correctedText = corrected || rawText;
+      }
+    } catch (e) {
+      // 校正失敗時は原音声 STT で翻訳継続
+      setStatus(`校正失敗 (続けて翻訳します): ${e.message}`, "error");
+    }
+  }
+
   setStatus("翻訳中...");
   try {
-    const out = await translate(srcLang, tgtLang, srcText);
+    const out = await translate(srcLang, tgtLang, textToTranslate);
     turn.tgtText = out;
     saveHistory();
     renderHistory();
@@ -920,14 +1143,41 @@ async function refreshVoiceSelectors() {
   }
 }
 
+function populateModelSelects() {
+  const mainSel = $("#model");
+  const defSel  = $("#defaultModel");
+  const corSel  = $("#defaultCorrectModel");
+  if (mainSel && mainSel.children.length === 0) {
+    for (const m of CFG.models) {
+      mainSel.appendChild(el("option", { value: m.id }, m.label));
+    }
+  }
+  if (defSel) {
+    defSel.innerHTML = "";
+    for (const m of CFG.models) {
+      defSel.appendChild(el("option", { value: m.id }, m.label));
+    }
+  }
+  if (corSel) {
+    // 既存の auto オプション以外をリセット
+    corSel.innerHTML = "";
+    corSel.appendChild(el("option", { value: "auto" }, "自動 (翻訳が Gemini ならそれ、Claude なら Gemini 2.5 Flash)"));
+    for (const m of CFG.models.filter(m => m.audio)) {
+      corSel.appendChild(el("option", { value: m.id }, m.label));
+    }
+  }
+}
+
 function openSettings() {
   $("#anthropicKey").value = localStorage.getItem(LS.anthropicKey) || "";
   $("#googleKey").value    = localStorage.getItem(LS.googleKey)    || "";
-  for (const r of document.querySelectorAll("input[name=defaultProvider]")) {
-    r.checked = (r.value === state.provider);
-  }
+  populateModelSelects();
+  $("#defaultModel").value = state.model;
   $("#defaultTone").value = state.tone;
   $("#defaultPair").value = state.pair;
+  $("#defaultCorrectMode").checked = !!state.correctMode;
+  $("#defaultCorrectModel").value = state.correctModel || "auto";
+  $("#domainHint").value = state.domainHint || "";
   $("#anthropicResult").textContent = "";
   $("#anthropicResult").className = "test-result";
   $("#googleResult").textContent = "";
@@ -942,17 +1192,31 @@ function saveSettingsFromDialog() {
   if (ak) localStorage.setItem(LS.anthropicKey, ak); else localStorage.removeItem(LS.anthropicKey);
   if (gk) localStorage.setItem(LS.googleKey, gk);    else localStorage.removeItem(LS.googleKey);
 
-  const prov = (document.querySelector("input[name=defaultProvider]:checked") || {}).value;
-  if (prov) {
-    state.provider = prov;
-    localStorage.setItem(LS.provider, prov);
-    $("#provider").value = prov;
+  const m = $("#defaultModel").value;
+  if (m && modelById(m)) {
+    state.model = m;
+    localStorage.setItem(LS.model, m);
+    $("#model").value = m;
   }
   const t = $("#defaultTone").value;
   state.tone = t; localStorage.setItem(LS.tone, t); $("#tone").value = t;
   const p = $("#defaultPair").value;
   state.pair = p; localStorage.setItem(LS.pair, p); $("#pair").value = p;
   applyPairUI();
+
+  // 校正モード
+  const cm = $("#defaultCorrectMode").checked;
+  state.correctMode = cm;
+  localStorage.setItem(LS.correctMode, cm ? "1" : "0");
+  $("#correctMode").checked = cm;
+
+  const cmModel = $("#defaultCorrectModel").value || "auto";
+  state.correctModel = cmModel;
+  localStorage.setItem(LS.correctModel, cmModel);
+
+  const dh = $("#domainHint").value;
+  state.domainHint = dh;
+  if (dh) localStorage.setItem(LS.domainHint, dh); else localStorage.removeItem(LS.domainHint);
 
   // voice 選択を保存 (空文字なら削除 = 自動選択)
   const vJa = $("#voiceJa").value;
@@ -992,7 +1256,7 @@ async function testClaudeKey() {
   out.textContent = "確認中...";
   out.className = "test-result";
   try {
-    const reply = await translateWithClaude(key, "Reply with just the word: OK", "ping");
+    const reply = await translateWithClaude(key, "claude-haiku-4-5", "Reply with just the word: OK", "ping");
     out.textContent = reply.length > 30 ? "応答受信" : `OK (${reply})`;
     out.className = "test-result ok";
   } catch (e) {
@@ -1012,7 +1276,7 @@ async function testGoogleKey() {
   out.textContent = "確認中...";
   out.className = "test-result";
   try {
-    const reply = await translateWithGemini(key, "Reply with just the word: OK", "ping");
+    const reply = await translateWithGemini(key, "gemini-2.5-flash", "Reply with just the word: OK", "ping");
     out.textContent = reply.length > 30 ? "応答受信" : `OK (${reply})`;
     out.className = "test-result ok";
   } catch (e) {
@@ -1023,15 +1287,20 @@ async function testGoogleKey() {
 
 // ---------- init ----------
 function init() {
+  // モデルセレクトを構築
+  populateModelSelects();
+
   // 初期セレクト反映
-  $("#provider").value = state.provider;
+  if (!modelById(state.model)) state.model = defaultModel();
+  $("#model").value = state.model;
   $("#tone").value     = state.tone;
   $("#pair").value     = state.pair;
+  $("#correctMode").checked = !!state.correctMode;
   applyPairUI();
 
-  $("#provider").addEventListener("change", e => {
-    state.provider = e.target.value;
-    localStorage.setItem(LS.provider, state.provider);
+  $("#model").addEventListener("change", e => {
+    state.model = e.target.value;
+    localStorage.setItem(LS.model, state.model);
   });
   $("#tone").addEventListener("change", e => {
     state.tone = e.target.value;
@@ -1041,6 +1310,13 @@ function init() {
     state.pair = e.target.value;
     localStorage.setItem(LS.pair, state.pair);
     applyPairUI();
+  });
+  $("#correctMode").addEventListener("change", e => {
+    state.correctMode = e.target.checked;
+    localStorage.setItem(LS.correctMode, state.correctMode ? "1" : "0");
+    if (state.correctMode && !localStorage.getItem(LS.googleKey)) {
+      setStatus("校正モードには Google AI API キーが必要です。⚙ 設定 から登録してください。", "error");
+    }
   });
 
   // PTT: A はペアの先頭言語 (例 ja-th なら ja → th)
