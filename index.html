@@ -237,7 +237,7 @@
     <label style="margin: 0; display:flex; align-items:center; gap:6px; cursor:pointer;">
       <input type="checkbox" id="correctMode"> 校正モード
       <span class="meta" style="color: var(--muted); font-size:12px;">
-        録音音声を AI に渡して STT 結果を補正 (Gemini 必須)
+        録音音声を AI で直接書き起こし & 校正 (Gemini 必須・端末 STT は使用せず)
       </span>
     </label>
   </div>
@@ -470,7 +470,7 @@
     { "id": "gemini-2.5-flash",      "label": "Gemini 2.5 Flash (低コスト)", "family": "gemini", "audio": true  }
   ],
   "system": "You are a professional translator. Translate the user's text from {SRC_NAME} to {TGT_NAME}. Output ONLY the translated text. Do not add explanations, romanization, parenthetical notes, quotation marks, or the original text. Preserve proper nouns, numbers, and the speaker's intent. Match the requested tone exactly.\n\nTone: {TONE}\n\nDomain context (the speaker's professional field and frequent terminology, may be empty):\n{DOMAIN_HINT}\n\nIf the input is ambiguous or appears to be a fragment, translate it as-is without asking for clarification.",
-  "correction": "You are a speech recognition corrector. The user provided audio of their actual speech, plus the on-device speech-to-text result which may contain misrecognitions (especially homophones and domain-specific terminology).\n\nLanguage of the speech: {SRC_NAME}\nOn-device transcription: \"{RAW_TEXT}\"\n\nDomain context (the speaker's professional field and frequent terminology):\n{DOMAIN_HINT}\n\nListen to the audio carefully. Output the most accurate, natural transcription of what was actually said. Pay special attention to:\n- Homophones in Japanese (e.g. technical chemistry terms like 過酢酸 mis-recognized as 浅草).\n- Domain-specific vocabulary listed in the domain context.\n- Proper nouns and numbers spoken by the user.\n\nOutput ONLY the corrected transcription text in {SRC_NAME}. No explanations, no quotation marks, no parenthetical notes, no translation.",
+  "correction": "You are a high-accuracy speech-to-text and correction system. The user has just spoken in {SRC_NAME}. Listen to the provided audio carefully and produce the most accurate transcription of what was actually said.\n\nPay special attention to:\n- Homophones (e.g. Japanese technical chemistry terms like 過酢酸 commonly mis-recognized as 浅草).\n- Domain-specific vocabulary listed in the domain context below.\n- Proper nouns and numbers spoken by the user.\n\nDomain context (the speaker's professional field and frequent terminology):\n{DOMAIN_HINT}\n\nOn-device speech-to-text result (may be empty, partial, or contain misrecognitions — use only as a hint, prefer the audio):\n\"{RAW_TEXT}\"\n\nOutput ONLY the final transcription text in {SRC_NAME}. No explanations, no quotation marks, no parenthetical notes, no translation.",
   "tones": {
     "business": "Polite formal business register. In Japanese use 敬語 (尊敬語/丁寧語) suitable for clients and superiors. In Thai use ภาษาทางการสุภาพ with ครับ/ค่ะ as appropriate. In English use professional, courteous business tone.",
     "casual": "Polite but friendly tone — slightly less formal than business. For talking to junior colleagues or peers. In Japanese use 丁寧語 (です/ます) without heavy 尊敬語. In Thai use สุภาพแต่เป็นกันเอง. In English use warm but professional tone.",
@@ -1095,18 +1095,30 @@ function setupPTT(btnId, getDirection) {
     active = true;
     btn.classList.add("recording");
 
-    // 校正モード時は MediaRecorder で並列録音
-    let recordingStarted = false;
     if (state.correctMode) {
+      // 校正モード: 端末 STT は使わず MediaRecorder のみで録音
+      // (Android Chrome で SpeechRecognition と MediaRecorder の並列実行はマイクが競合するため)
+      if (!localStorage.getItem(LS.googleKey)) {
+        active = false;
+        btn.classList.remove("recording");
+        state.recognizingFor = null;
+        setStatus("校正モードには Google AI API キーが必要です。⚙ 設定 から登録してください。", "error");
+        return;
+      }
       try {
         await startAudioRecording();
-        recordingStarted = true;
+        setStatus(`🎤 ${langCfg.label} を録音中... (校正モード: AI で書き起こし)`);
       } catch (e) {
-        setStatus(`録音開始失敗 (校正モードを一時的にスキップ): ${e.message}`, "error");
+        active = false;
+        btn.classList.remove("recording");
+        state.recognizingFor = null;
+        setStatus(`録音開始失敗: ${e.message}`, "error");
       }
+      return;
     }
 
-    setStatus(`🎤 ${langCfg.label} を録音中...${recordingStarted ? " (校正用録音 ON)" : ""}`);
+    // 通常モード: 端末 SpeechRecognition
+    setStatus(`🎤 ${langCfg.label} を録音中...`);
     state.recognition = startRecognition(
       langCfg.bcp47,
       async (finalText) => {
@@ -1115,13 +1127,6 @@ function setupPTT(btnId, getDirection) {
         state.recognition = null;
         active = false;
         btn.classList.remove("recording");
-
-        // MediaRecorder を停止して blob 取得
-        let audioBlob = null;
-        if (recordingStarted) {
-          try { audioBlob = await stopAudioRecording(); } catch {}
-        }
-
         if (wasFor !== btnId) return;
         if (!finalText) {
           if (!$("#status").classList.contains("error")) {
@@ -1129,16 +1134,13 @@ function setupPTT(btnId, getDirection) {
           }
           return;
         }
-        await onRecognized(finalText, getDirection, audioBlob);
+        await onRecognized(finalText, getDirection, null);
       },
       async (err) => {
         state.recognizingFor = null;
         state.recognition = null;
         active = false;
         btn.classList.remove("recording");
-        if (recordingStarted) {
-          try { await stopAudioRecording(); } catch {}
-        }
         setStatus(err, "error");
         if (/許可/.test(err)) state.micGranted = false;
       }
@@ -1147,8 +1149,26 @@ function setupPTT(btnId, getDirection) {
 
   const end = async (e) => {
     e.preventDefault();
-    if (!active || !state.recognition) return;
-    try { state.recognition.stop(); } catch {}
+    if (!active) return;
+    if (state.correctMode) {
+      // MediaRecorder を停止して校正処理へ
+      const wasFor = state.recognizingFor;
+      state.recognizingFor = null;
+      active = false;
+      btn.classList.remove("recording");
+      let blob = null;
+      try { blob = await stopAudioRecording(); } catch {}
+      if (wasFor !== btnId) return;
+      if (!blob || blob.size === 0) {
+        setStatus("録音失敗 (音声データが空です)", "error");
+        return;
+      }
+      // rawText は空のまま渡す → onRecognized が校正フェーズで Gemini に書き起こさせる
+      await onRecognized("", getDirection, blob);
+    } else {
+      if (!state.recognition) return;
+      try { state.recognition.stop(); } catch {}
+    }
   };
 
   btn.addEventListener("pointerdown", begin);
@@ -1174,9 +1194,9 @@ async function onRecognized(rawText, getDirection, audioBlob) {
   const { srcLang, tgtLang } = getDirection();
   const turn = {
     srcLang, tgtLang,
-    rawText: rawText,
+    rawText: rawText || "",
     correctedText: "",
-    srcText: rawText,
+    srcText: rawText || "",
     tgtText: "",
     error: null,
     ts: Date.now()
@@ -1185,24 +1205,48 @@ async function onRecognized(rawText, getDirection, audioBlob) {
   saveHistory();
   renderHistory();
 
-  // 校正フェーズ
+  // 校正フェーズ (校正モード ON で録音音声がある時)
   let textToTranslate = rawText;
   if (state.correctMode && audioBlob && audioBlob.size > 0) {
-    setStatus("🛠 校正中 (録音音声を AI で解析)...");
+    setStatus(rawText
+      ? "🛠 校正中 (録音音声を AI で解析)..."
+      : "🛠 文字起こし & 校正中 (録音音声を AI で解析)..."
+    );
     try {
-      const corrected = await correctTranscription(audioBlob, rawText, srcLang);
-      if (corrected && corrected !== rawText) {
+      const corrected = await correctTranscription(audioBlob, rawText || "", srcLang);
+      if (corrected) {
         turn.correctedText = corrected;
         turn.srcText = corrected;
         textToTranslate = corrected;
         renderHistory();
-      } else {
-        turn.correctedText = corrected || rawText;
+      } else if (!rawText) {
+        // 校正結果も空 + 端末 STT も無い → 翻訳できない
+        turn.error = "音声からテキストを取得できませんでした";
+        saveHistory();
+        renderHistory();
+        setStatus(turn.error, "error");
+        return;
       }
     } catch (e) {
-      // 校正失敗時は原音声 STT で翻訳継続
-      setStatus(`校正失敗 (続けて翻訳します): ${e.message}`, "error");
+      if (!rawText) {
+        // 校正失敗 + STT 無し → 翻訳不可
+        turn.error = `書き起こし失敗: ${e.message}`;
+        saveHistory();
+        renderHistory();
+        setStatus(turn.error, "error");
+        return;
+      }
+      // STT があれば校正失敗でも端末 STT で翻訳継続
+      setStatus(`校正失敗 (端末 STT で翻訳継続): ${e.message}`, "error");
     }
+  }
+
+  if (!textToTranslate) {
+    turn.error = "テキストが空のため翻訳できません";
+    saveHistory();
+    renderHistory();
+    setStatus(turn.error, "error");
+    return;
   }
 
   setStatus("翻訳中...");
