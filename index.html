@@ -74,8 +74,8 @@
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 12px;
-    min-height: 280px;
-    max-height: 50vh;
+    min-height: 220px;
+    max-height: 360px;
     overflow-y: auto;
   }
   .history .empty { color: var(--muted); text-align: center; padding: 24px 0; }
@@ -142,10 +142,13 @@
     color: var(--text);
     border-radius: 12px;
     width: min(640px, 92vw);
+    max-height: 80vh;
     padding: 0;
+    display: flex;
+    flex-direction: column;
   }
   dialog.settings::backdrop { background: rgba(0,0,0,0.55); }
-  dialog .body { padding: 16px; max-height: 80vh; overflow-y: auto; }
+  dialog .body { padding: 16px; max-height: 65vh; overflow-y: auto; flex: 1 1 auto; }
   dialog .body h2 { margin: 0 0 8px; font-size: 18px; }
   dialog .actions {
     display: flex; gap: 8px; justify-content: flex-end;
@@ -234,13 +237,13 @@
     </div>
   </div>
 
-  <div class="row" style="margin: 0 0 12px; gap: 12px; align-items: center;">
-    <label style="margin: 0; display:flex; align-items:center; gap:6px; cursor:pointer;">
-      <input type="checkbox" id="correctMode"> 校正モード
-      <span class="meta" style="color: var(--muted); font-size:12px;">
-        録音音声を AI で直接書き起こし & 校正 (Gemini 必須・端末 STT は使用せず)
-      </span>
+  <div class="row" style="margin: 0 0 12px; gap: 8px; align-items: center; flex-wrap: wrap;">
+    <label style="margin: 0; display:flex; align-items:center; gap:6px; cursor:pointer; white-space: nowrap;">
+      <input type="checkbox" id="correctMode"><span style="white-space: nowrap;">校正モード</span>
     </label>
+    <span class="meta" style="color: var(--muted); font-size:12px; flex: 1 1 auto; min-width: 0;">
+      録音音声を AI で直接書き起こし & 校正
+    </span>
   </div>
 
   <div class="history" id="history">
