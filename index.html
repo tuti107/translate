@@ -1366,7 +1366,16 @@ function openSettings() {
   $("#googleResult").textContent = "";
   $("#googleResult").className = "test-result";
   refreshVoiceSelectors();
-  $("#settings").showModal();
+  const dlg = $("#settings");
+  dlg.showModal();
+  // showModal() 後、ブラウザが先頭の <select id="defaultModel"> を自動フォーカスして
+  // ドロップダウン候補が即座に開いて見える挙動を抑止する。
+  requestAnimationFrame(() => {
+    const af = document.activeElement;
+    if (af && af !== document.body && af !== dlg && typeof af.blur === "function") {
+      try { af.blur(); } catch {}
+    }
+  });
 }
 
 function saveSettingsFromDialog() {
