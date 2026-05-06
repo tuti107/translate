@@ -206,6 +206,97 @@
   @media (min-width: 720px) {
     .toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; }
   }
+
+  /* recording overlay */
+  .rec-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .rec-overlay[hidden] { display: none; }
+  .rec-card {
+    text-align: center;
+    color: var(--text);
+    max-width: 480px; width: 100%;
+    pointer-events: none;
+  }
+  .rec-pulse {
+    width: 140px; height: 140px;
+    border-radius: 50%;
+    background: var(--danger);
+    margin: 0 auto 24px;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    animation: rec-pulse-bg 1.5s ease-in-out infinite;
+  }
+  .rec-pulse::before, .rec-pulse::after {
+    content: "";
+    position: absolute; inset: -10px;
+    border-radius: 50%;
+    border: 3px solid var(--danger);
+    animation: rec-pulse-ring 1.6s ease-out infinite;
+  }
+  .rec-pulse::after { animation-delay: 0.8s; }
+  .rec-mic { font-size: 64px; line-height: 1; }
+  @keyframes rec-pulse-bg {
+    0%,100% { transform: scale(1); }
+    50%     { transform: scale(0.94); }
+  }
+  @keyframes rec-pulse-ring {
+    0%   { transform: scale(0.85); opacity: 0.85; }
+    100% { transform: scale(1.7); opacity: 0; }
+  }
+  .rec-lang { font-size: 20px; color: var(--muted); margin-bottom: 8px; }
+  .rec-text {
+    font-size: 18px;
+    min-height: 24px;
+    padding: 12px 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin: 12px 0;
+    word-break: break-word;
+    text-align: left;
+    line-height: 1.5;
+  }
+  .rec-text:empty { display: none; }
+  .rec-text.error { color: var(--danger); border-color: var(--danger); }
+  .rec-time {
+    font-size: 14px; color: var(--muted);
+    font-feature-settings: "tnum";
+    font-variant-numeric: tabular-nums;
+    margin-top: 4px;
+  }
+  .rec-hint {
+    font-size: 13px; color: var(--muted);
+    margin-top: 18px;
+  }
+  .rec-bars {
+    display: flex; justify-content: center; gap: 4px;
+    height: 24px; margin: 12px 0 8px; align-items: flex-end;
+  }
+  .rec-bars span {
+    display: inline-block; width: 4px; background: var(--accent);
+    border-radius: 2px;
+    animation: rec-bar 0.9s ease-in-out infinite;
+  }
+  .rec-bars span:nth-child(1) { animation-delay: 0.0s; }
+  .rec-bars span:nth-child(2) { animation-delay: 0.1s; }
+  .rec-bars span:nth-child(3) { animation-delay: 0.2s; }
+  .rec-bars span:nth-child(4) { animation-delay: 0.3s; }
+  .rec-bars span:nth-child(5) { animation-delay: 0.4s; }
+  .rec-bars span:nth-child(6) { animation-delay: 0.5s; }
+  .rec-bars span:nth-child(7) { animation-delay: 0.4s; }
+  .rec-bars span:nth-child(8) { animation-delay: 0.3s; }
+  .rec-bars span:nth-child(9) { animation-delay: 0.2s; }
+  @keyframes rec-bar {
+    0%,100% { height: 6px; }
+    50%     { height: 24px; }
+  }
 </style>
 </head>
 <body>
@@ -255,12 +346,25 @@
   </div>
 
   <div class="ptt-wrap">
-    <button class="ptt" id="pttA"><span id="pttALabel">A</span><small id="pttAHint">押して話す</small></button>
-    <button class="ptt" id="pttB"><span id="pttBLabel">B</span><small id="pttBHint">押して話す</small></button>
+    <button class="ptt" id="pttA"><span id="pttALabel">A</span><small id="pttAHint">タップで開始</small></button>
+    <button class="ptt" id="pttB"><span id="pttBLabel">B</span><small id="pttBHint">タップで開始</small></button>
   </div>
 
   <div class="status" id="status"></div>
 </main>
+
+<div class="rec-overlay" id="recOverlay" hidden>
+  <div class="rec-card">
+    <div class="rec-pulse"><span class="rec-mic">🎤</span></div>
+    <div class="rec-lang" id="recLang"></div>
+    <div class="rec-bars" id="recBars">
+      <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div class="rec-text" id="recText"></div>
+    <div class="rec-time" id="recTime">0.0s</div>
+    <div class="rec-hint" id="recHint">画面のどこかをタップで停止</div>
+  </div>
+</div>
 
 <dialog class="settings" id="settings">
   <form method="dialog">
@@ -757,8 +861,18 @@ function startRecognition(lang, onFinal, onError) {
       if (res.isFinal) finalText += res[0].transcript;
       else interim += res[0].transcript;
     }
-    setStatus(`認識中: ${finalText}${interim ? " ⟪" + interim + "⟫" : ""}`);
     state.recognizedText = finalText || interim;
+    // 録音オーバーレイ表示中は overlay 内の #recText に interim を表示
+    if (typeof recState !== "undefined" && recState.active) {
+      recState.finalText = finalText;
+      const txt = $("#recText");
+      if (txt) {
+        txt.classList.remove("error");
+        txt.textContent = `${finalText}${interim ? " ⟪" + interim + "⟫" : ""}`;
+      }
+    } else {
+      setStatus(`認識中: ${finalText}${interim ? " ⟪" + interim + "⟫" : ""}`);
+    }
   };
   r.onerror = (ev) => {
     if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
@@ -920,6 +1034,63 @@ async function translateWithClaude(apiKey, modelId, system, userText) {
   return block.text.trim();
 }
 
+// Gemini API の共通 fetch ラッパー。
+// 503 (overloaded) / 429 (rate limit) / 500 / network エラー時は指数バックオフで最大 3 回リトライ。
+// 混雑エラーが続く場合 (タイ国などキャパシティ逼迫リージョン)、ユーザーに状況を通知する。
+async function fetchGeminiJSON(url, body, opts = {}) {
+  const maxAttempts = opts.maxAttempts || 3;
+  const onRetry = opts.onRetry || (() => {});
+  let lastErr;
+  for (let i = 0; i < maxAttempts; i++) {
+    let res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+    } catch (e) {
+      // ネットワークエラー: リトライ
+      lastErr = e;
+      if (i < maxAttempts - 1) {
+        const d = 800 * Math.pow(2, i);
+        onRetry(i + 1, maxAttempts, d, "network");
+        await new Promise(r => setTimeout(r, d));
+        continue;
+      }
+      throw e;
+    }
+    if (res.ok) return await res.json();
+    const errText = await res.text().catch(() => "");
+    const status = res.status;
+    const retriable = (status === 503 || status === 429 || status === 500 || status === 502 || status === 504);
+    if (retriable && i < maxAttempts - 1) {
+      const d = 800 * Math.pow(2, i);
+      onRetry(i + 1, maxAttempts, d, status);
+      await new Promise(r => setTimeout(r, d));
+      continue;
+    }
+    if (status === 503 || status === 429) {
+      throw new Error(`Gemini 混雑中 (${status}, ${maxAttempts}回試行)。しばらく待つか、別モデル (Pro / 3 Pro) に切り替えてください。詳細: ${errText.slice(0, 200)}`);
+    }
+    throw new Error(`Gemini API ${status}: ${errText.slice(0, 300)}`);
+  }
+  throw lastErr || new Error("Gemini: 全リトライ失敗");
+}
+
+function geminiRetryNotifier(label) {
+  return (n, max, delayMs, status) => {
+    const sec = (delayMs / 1000).toFixed(1);
+    const msg = `${label}: Gemini 混雑中 (${status}) — ${n}/${max - 1} 回目のリトライを ${sec}s 後に...`;
+    // 録音 overlay 表示中なら overlay 内に、そうでなければ status バーに
+    if (recState && recState.active) {
+      setRecText(msg, true);
+    } else {
+      setStatus(msg, "error");
+    }
+  };
+}
+
 // Gemini 2.5 Pro 等の thinking モデルは parts 配列に thought=true の要素を含むことがある。
 // それを除外し、本文 text のみを連結して返す。
 function extractGeminiText(data) {
@@ -943,24 +1114,16 @@ function extractGeminiText(data) {
 
 async function translateWithGemini(apiKey, modelId, system, userText) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: "user", parts: [{ text: userText }] }],
-      generationConfig: {
-        temperature: 0.3,
-        // 2.5 Pro / 3 Pro は thinking 出力で枠を消費するので余裕を持たせる
-        maxOutputTokens: 8192
-      }
-    })
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    throw new Error(`Gemini API ${res.status}: ${errText.slice(0, 300)}`);
-  }
-  return extractGeminiText(await res.json());
+  const data = await fetchGeminiJSON(url, {
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: userText }] }],
+    generationConfig: {
+      temperature: 0.3,
+      // 2.5 Pro / 3 Pro は thinking 出力で枠を消費するので余裕を持たせる
+      maxOutputTokens: 8192
+    }
+  }, { onRetry: geminiRetryNotifier("翻訳") });
+  return extractGeminiText(data);
 }
 
 async function translate(srcLang, tgtLang, text, modelId) {
@@ -1000,25 +1163,17 @@ async function correctTranscription(audioBlob, rawText, srcLang) {
   const prompt = buildCorrectionPrompt(srcLang, rawText);
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m.id)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{
-        role: "user",
-        parts: [
-          { inlineData: { mimeType, data: base64 } },
-          { text: prompt }
-        ]
-      }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
-    })
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    throw new Error(`校正 API ${res.status}: ${errText.slice(0, 300)}`);
-  }
-  return extractGeminiText(await res.json());
+  const data = await fetchGeminiJSON(url, {
+    contents: [{
+      role: "user",
+      parts: [
+        { inlineData: { mimeType, data: base64 } },
+        { text: prompt }
+      ]
+    }],
+    generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
+  }, { onRetry: geminiRetryNotifier("校正") });
+  return extractGeminiText(data);
 }
 
 function blobToBase64(blob) {
@@ -1072,148 +1227,194 @@ function stopAudioRecording() {
   });
 }
 
-// ---------- push-to-talk wiring ----------
-function setupPTT(btnId, getDirection) {
-  const btn = document.getElementById(btnId);
-  let active = false;
+// ---------- 録音 UI: タップで開始 / タップで停止 (オーバーレイ表示) ----------
+const recState = {
+  active: false,
+  btnId: null,
+  getDirection: null,
+  startTs: 0,
+  timerId: null,
+  recognition: null,
+  finalText: "",       // 通常モード時の確定文字列
+  startedAtPerf: 0     // タップ重複防止用 (短時間の連続発火を抑制)
+};
 
-  const begin = async (e) => {
-    e.preventDefault();
-    if (active || state.recognizingFor) return;
-    const { srcLang } = getDirection();
-    const langCfg = CFG.languages[srcLang];
+function showRecOverlay(langCfg) {
+  $("#recLang").textContent = `${langCfg.flag} ${langCfg.labelLong || langCfg.label}`;
+  const txt = $("#recText");
+  txt.textContent = "";
+  txt.classList.remove("error");
+  $("#recTime").textContent = "0.0s";
+  $("#recHint").textContent = "画面のどこかをタップで停止";
+  $("#recOverlay").hidden = false;
+}
+function hideRecOverlay() {
+  $("#recOverlay").hidden = true;
+  $("#recText").textContent = "";
+  $("#recText").classList.remove("error");
+}
+function setRecText(text, isError) {
+  const txt = $("#recText");
+  txt.textContent = text || "";
+  txt.classList.toggle("error", !!isError);
+}
+function setRecHint(text) {
+  $("#recHint").textContent = text || "";
+}
 
-    // 1) 初回はマイク許可ダイアログだけ出して録音は開始しない
-    //    (ユーザーがダイアログ承認のため指を離してしまい、押下状態が解除できなくなるのを防ぐ)
-    if (!state.micGranted) {
-      setStatus("マイク許可を確認中... (許可してください)");
-      const r = await ensureMicPermission();
-      if (!r.ok) {
-        if (/NotAllowedError|Permission/i.test(r.reason)) {
-          setStatus(notAllowedHelp(), "error");
-        } else {
-          setStatus("マイクが利用できません: " + r.reason, "error");
-        }
-        return;
+function startRecTimer() {
+  recState.startTs = Date.now();
+  $("#recTime").textContent = "0.0s";
+  if (recState.timerId) clearInterval(recState.timerId);
+  recState.timerId = setInterval(() => {
+    const sec = ((Date.now() - recState.startTs) / 1000).toFixed(1);
+    $("#recTime").textContent = `${sec}s`;
+  }, 100);
+}
+function stopRecTimer() {
+  if (recState.timerId) { clearInterval(recState.timerId); recState.timerId = null; }
+}
+
+async function startRecordingFlow(btnId, getDirection) {
+  if (recState.active) return;
+  const { srcLang } = getDirection();
+  const langCfg = CFG.languages[srcLang];
+
+  // 初回はマイク許可ダイアログだけ出して録音は開始しない
+  if (!state.micGranted) {
+    setStatus("マイク許可を確認中... (許可してください)");
+    const r = await ensureMicPermission();
+    if (!r.ok) {
+      if (/NotAllowedError|Permission/i.test(r.reason)) {
+        setStatus(notAllowedHelp(), "error");
+      } else {
+        setStatus("マイクが利用できません: " + r.reason, "error");
       }
-      state.micGranted = true;
-      setStatus("✅ マイク許可 OK。もう一度ボタンを長押しして話してください。", "ok");
       return;
     }
+    state.micGranted = true;
+    setStatus("✅ マイク許可 OK。もう一度ボタンをタップして話してください。", "ok");
+    return;
+  }
 
-    // 2) 指が外に出てもイベントを受け続けるよう pointer capture を取得
-    if (e.pointerId !== undefined) {
-      try { btn.setPointerCapture(e.pointerId); } catch {}
+  // 校正モード時の API キー必須チェック
+  if (state.correctMode && !localStorage.getItem(LS.googleKey)) {
+    setStatus("校正モードには Google AI API キーが必要です。⚙ 設定 から登録してください。", "error");
+    return;
+  }
+
+  // 録音状態を立てる
+  recState.active = true;
+  recState.btnId = btnId;
+  recState.getDirection = getDirection;
+  recState.finalText = "";
+  recState.startedAtPerf = performance.now();
+  showRecOverlay(langCfg);
+  startRecTimer();
+  setStatus(""); // メイン画面のステータスはクリア (overlay 内に表示)
+
+  if (state.correctMode) {
+    setRecHint("録音中。画面のどこかをタップで停止");
+    try {
+      await startAudioRecording();
+    } catch (e) {
+      stopRecTimer();
+      hideRecOverlay();
+      recState.active = false;
+      setStatus(`録音開始失敗: ${e.message}`, "error");
     }
-    btn._pointerId = (e.pointerId !== undefined) ? e.pointerId : null;
-
-    state.recognizedText = "";
-    state.recognizingFor = btnId;
-    active = true;
-    btn.classList.add("recording");
-
-    if (state.correctMode) {
-      // 校正モード: 端末 STT は使わず MediaRecorder のみで録音
-      // (Android Chrome で SpeechRecognition と MediaRecorder の並列実行はマイクが競合するため)
-      if (!localStorage.getItem(LS.googleKey)) {
-        active = false;
-        btn.classList.remove("recording");
-        state.recognizingFor = null;
-        setStatus("校正モードには Google AI API キーが必要です。⚙ 設定 から登録してください。", "error");
-        return;
-      }
-      try {
-        await startAudioRecording();
-        setStatus(`🎤 ${langCfg.label} を録音中... (校正モード: AI で書き起こし)`);
-      } catch (e) {
-        active = false;
-        btn.classList.remove("recording");
-        state.recognizingFor = null;
-        setStatus(`録音開始失敗: ${e.message}`, "error");
-      }
-      return;
-    }
-
+  } else {
     // 通常モード: 端末 SpeechRecognition
-    setStatus(`🎤 ${langCfg.label} を録音中...`);
-    state.recognition = startRecognition(
+    setRecHint("認識中。画面のどこかをタップで停止");
+    recState.recognition = startRecognition(
       langCfg.bcp47,
       async (finalText) => {
-        const wasFor = state.recognizingFor;
-        state.recognizingFor = null;
-        state.recognition = null;
-        active = false;
-        btn.classList.remove("recording");
-        if (wasFor !== btnId) return;
-        if (!finalText) {
-          if (!$("#status").classList.contains("error")) {
-            setStatus("（音声が認識できませんでした）", "error");
-          }
-          return;
-        }
-        await onRecognized(finalText, getDirection, null);
+        // SpeechRecognition が自然終了 (silence) または stop() で終了
+        await finalizeRecording(finalText, null);
       },
       async (err) => {
-        state.recognizingFor = null;
-        state.recognition = null;
-        active = false;
-        btn.classList.remove("recording");
-        setStatus(err, "error");
+        // エラー: overlay 内にメッセージを表示し、しばらく後に閉じる
+        setRecText(err, true);
         if (/許可/.test(err)) state.micGranted = false;
+        // 1.8 秒後に overlay を閉じる
+        setTimeout(() => {
+          if (recState.active) {
+            stopRecTimer();
+            hideRecOverlay();
+            recState.active = false;
+          }
+        }, 1800);
       }
     );
-  };
+  }
+}
 
-  const releaseCapture = () => {
-    if (btn._pointerId != null) {
-      try { btn.releasePointerCapture(btn._pointerId); } catch {}
-      btn._pointerId = null;
+// SpeechRecognition の onresult 経由 / 校正モードのタップ停止経由 / 自然停止経由
+async function finalizeRecording(finalText, audioBlob) {
+  if (!recState.active) return;
+  recState.active = false;
+  stopRecTimer();
+  recState.recognition = null;
+  hideRecOverlay();
+
+  const getDirection = recState.getDirection;
+  if (!getDirection) return;
+
+  if (audioBlob) {
+    if (!audioBlob.size) {
+      setStatus("録音失敗 (音声データが空です)", "error");
+      return;
     }
-  };
+    await onRecognized("", getDirection, audioBlob);
+    return;
+  }
+  if (!finalText) {
+    setStatus("（音声が認識できませんでした）", "error");
+    return;
+  }
+  await onRecognized(finalText, getDirection, null);
+}
 
-  const end = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
-    if (!active) return;
-    releaseCapture();
-    if (state.correctMode) {
-      // MediaRecorder を停止して校正処理へ
-      const wasFor = state.recognizingFor;
-      state.recognizingFor = null;
-      active = false;
-      btn.classList.remove("recording");
-      let blob = null;
-      try { blob = await stopAudioRecording(); } catch {}
-      if (wasFor !== btnId) return;
-      if (!blob || blob.size === 0) {
-        setStatus("録音失敗 (音声データが空です)", "error");
-        return;
-      }
-      // rawText は空のまま渡す → onRecognized が校正フェーズで Gemini に書き起こさせる
-      await onRecognized("", getDirection, blob);
+async function userStopRecording() {
+  if (!recState.active) return;
+  // タップ開始から極短時間 (300ms) 以内の停止イベントは無視 (誤タップ防止)
+  if (performance.now() - recState.startedAtPerf < 300) return;
+  if (state.correctMode) {
+    // MediaRecorder を停止して校正処理へ
+    let blob = null;
+    try { blob = await stopAudioRecording(); } catch {}
+    await finalizeRecording("", blob);
+  } else {
+    // SpeechRecognition の stop() → onend → finalizeRecording (onFinal)
+    if (recState.recognition) {
+      try { recState.recognition.stop(); } catch {}
     } else {
-      if (!state.recognition) return;
-      try { state.recognition.stop(); } catch {}
+      // 既に nullable なら直接 finalize
+      await finalizeRecording(recState.finalText || "", null);
     }
-  };
+  }
+}
 
-  btn.addEventListener("pointerdown", begin);
-  btn.addEventListener("pointerup", end);
-  btn.addEventListener("pointercancel", end);
-  // pointerleave は意図的にハンドルしない:
-  //   capture 取得済みのため指が外に出てもイベントは受け続ける。
-  //   leave で停止すると指が少しずれた瞬間に勝手に翻訳が始まるバグになる。
+function setupPTT(btnId, getDirection) {
+  const btn = document.getElementById(btnId);
+
+  btn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (recState.active) {
+      // 録音中に同じ/別ボタンタップでも停止
+      await userStopRecording();
+    } else {
+      await startRecordingFlow(btnId, getDirection);
+    }
+  });
   btn.addEventListener("contextmenu", (e) => e.preventDefault());
-  // キーボード操作 (PC): Enter/Space で開始/終了 のトグル
+  // PC: Enter/Space でトグル
   btn.addEventListener("keydown", (e) => {
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
-      if (!active) begin(e);
-    }
-  });
-  btn.addEventListener("keyup", (e) => {
-    if (e.key === " " || e.key === "Enter") {
-      e.preventDefault();
-      if (active) end(e);
+      if (recState.active) userStopRecording();
+      else startRecordingFlow(btnId, getDirection);
     }
   });
 }
@@ -1578,6 +1779,13 @@ function init() {
     state.history = [];
     saveHistory();
     renderHistory();
+  });
+
+  // オーバーレイのどこをタップしても録音停止
+  $("#recOverlay").addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    userStopRecording();
   });
 
   renderHistory();
