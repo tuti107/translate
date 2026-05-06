@@ -123,7 +123,8 @@
     display: flex; align-items: center; justify-content: center;
     flex-direction: column;
     user-select: none; -webkit-user-select: none;
-    touch-action: manipulation;
+    -webkit-touch-callout: none;
+    touch-action: none;
   }
   .ptt small { font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 4px; }
   .ptt.recording { background: #2a1a1a; border-color: var(--danger); color: var(--danger); }
@@ -1075,9 +1076,10 @@ function setupPTT(btnId, getDirection) {
     const { srcLang } = getDirection();
     const langCfg = CFG.languages[srcLang];
 
-    // 1) 先にマイク許可を確実に取得 (Android Chrome の not-allowed 回避)
+    // 1) 初回はマイク許可ダイアログだけ出して録音は開始しない
+    //    (ユーザーがダイアログ承認のため指を離してしまい、押下状態が解除できなくなるのを防ぐ)
     if (!state.micGranted) {
-      setStatus("マイク許可を確認中...");
+      setStatus("マイク許可を確認中... (許可してください)");
       const r = await ensureMicPermission();
       if (!r.ok) {
         if (/NotAllowedError|Permission/i.test(r.reason)) {
@@ -1088,7 +1090,15 @@ function setupPTT(btnId, getDirection) {
         return;
       }
       state.micGranted = true;
+      setStatus("✅ マイク許可 OK。もう一度ボタンを長押しして話してください。", "ok");
+      return;
     }
+
+    // 2) 指が外に出てもイベントを受け続けるよう pointer capture を取得
+    if (e.pointerId !== undefined) {
+      try { btn.setPointerCapture(e.pointerId); } catch {}
+    }
+    btn._pointerId = (e.pointerId !== undefined) ? e.pointerId : null;
 
     state.recognizedText = "";
     state.recognizingFor = btnId;
@@ -1147,9 +1157,17 @@ function setupPTT(btnId, getDirection) {
     );
   };
 
+  const releaseCapture = () => {
+    if (btn._pointerId != null) {
+      try { btn.releasePointerCapture(btn._pointerId); } catch {}
+      btn._pointerId = null;
+    }
+  };
+
   const end = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!active) return;
+    releaseCapture();
     if (state.correctMode) {
       // MediaRecorder を停止して校正処理へ
       const wasFor = state.recognizingFor;
@@ -1174,7 +1192,10 @@ function setupPTT(btnId, getDirection) {
   btn.addEventListener("pointerdown", begin);
   btn.addEventListener("pointerup", end);
   btn.addEventListener("pointercancel", end);
-  btn.addEventListener("pointerleave", end);
+  // pointerleave は意図的にハンドルしない:
+  //   capture 取得済みのため指が外に出てもイベントは受け続ける。
+  //   leave で停止すると指が少しずれた瞬間に勝手に翻訳が始まるバグになる。
+  btn.addEventListener("contextmenu", (e) => e.preventDefault());
   // キーボード操作 (PC): Enter/Space で開始/終了 のトグル
   btn.addEventListener("keydown", (e) => {
     if (e.key === " " || e.key === "Enter") {
